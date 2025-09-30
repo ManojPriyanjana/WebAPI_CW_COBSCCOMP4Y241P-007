@@ -20,3 +20,15 @@ npm run dev
 ```
 
 Visit http://localhost:3000/healthz to see `{ "status": "ok" }`.
+
+## Observability and error handling
+
+- Structured logging via Pino (with pretty logs in non-production)
+- Each request has a unique `X-Request-Id` header; it's also available on `req.id`
+- Centralized error handling returns JSON:
+
+```
+{ "error": { "code": <statusCode>, "message": "<message>" } }
+```
+
+Use the `X-Request-Id` value to correlate logs with API responses.
