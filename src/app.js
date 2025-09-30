@@ -4,6 +4,7 @@ import helmet from 'helmet'
 
 import healthRouter from './routes/health.js'
 import apiRouter from './routes/index.js'
+import sseRouter from './routes/sse.js'
 import requestId from './middleware/requestId.js'
 import logger from './middleware/logger.js'
 import conditionalGet from './middleware/conditionalGet.js'
@@ -28,6 +29,7 @@ app.use(conditionalGet)
 
 // Routes
 app.use('/', healthRouter)
+app.use('/', sseRouter)
 app.use('/api/v1', apiRouter)
 
 // 404 and error handling
