@@ -3,6 +3,7 @@ import cors from 'cors'
 import helmet from 'helmet'
 
 import healthRouter from './routes/health.js'
+import apiRouter from './routes/index.js'
 import requestId from './middleware/requestId.js'
 import logger from './middleware/logger.js'
 import { notFound, errorHandler } from './middleware/errors.js'
@@ -24,6 +25,7 @@ app.use(logger)
 
 // Routes
 app.use('/', healthRouter)
+app.use('/api/v1', apiRouter)
 
 // 404 and error handling
 app.use(notFound)
