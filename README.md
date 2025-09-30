@@ -8,6 +8,7 @@
 2. Start the dev server with auto-reload
 
 ### Scripts
+
 - dev: runs nodemon on src/server.js
 - start: runs node on src/server.js
 
