@@ -3,7 +3,7 @@ import { parsePagination } from '../common/pagination.js'
 import { asString } from '../common/validate.js'
 import * as service from './routes.service.js'
 
-export function getRoutes(req, res) {
+export async function getRoutes(req, res, next) {
   const { page, limit, sort } = parsePagination(req.query)
 
   const filters = {
@@ -12,13 +12,32 @@ export function getRoutes(req, res) {
     provinceTo: asString(req.query?.['filter[provinceTo]'])
   }
 
-  const result = service.findAll({ page, limit, sort, filters })
-  return res.json(result)
+  try {
+    const result = await service.findAll({ page, limit, sort, filters })
+    return res.json(result)
+  } catch (err) {
+    return next(err)
+  }
 }
 
-export function getRouteById(req, res, next) {
+export async function getRouteById(req, res, next) {
   const id = req.params.id
-  const route = service.findById(id)
-  if (!route) return next(createError(404, 'Route not found'))
-  return res.json(route)
+  try {
+    const route = await service.findById(id)
+    if (!route) return next(createError(404, 'Route not found'))
+    return res.json(route)
+  } catch (err) {
+    return next(err)
+  }
+}
+
+export async function getRouteByCode(req, res, next) {
+  const code = req.params.code
+  try {
+    const route = await service.findByCode(code)
+    if (!route) return next(createError(404, 'Route not found'))
+    return res.json(route)
+  } catch (err) {
+    return next(err)
+  }
 }
