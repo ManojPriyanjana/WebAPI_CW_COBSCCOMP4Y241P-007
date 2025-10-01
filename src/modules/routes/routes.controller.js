@@ -9,7 +9,7 @@ export async function getRoutes(req, res, next) {
   const filters = {
     name: asString(req.query?.['filter[name]']),
     provinceFrom: asString(req.query?.['filter[provinceFrom]']),
-    provinceTo: asString(req.query?.['filter[provinceTo]'])
+    provinceTo: asString(req.query?.['filter[provinceTo]']),
   }
 
   try {

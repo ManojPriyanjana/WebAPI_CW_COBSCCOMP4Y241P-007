@@ -8,7 +8,7 @@ export async function getTrips(req, res, next) {
   const filters = {
     routeId: asString(req.query?.routeId),
     busId: asString(req.query?.busId),
-    serviceDate: asString(req.query?.serviceDate)
+    serviceDate: asString(req.query?.serviceDate),
   }
   try {
     const result = await service.list({ page, limit, sort, filters })

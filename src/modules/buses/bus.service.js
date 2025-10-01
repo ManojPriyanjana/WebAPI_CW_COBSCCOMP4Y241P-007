@@ -22,7 +22,7 @@ export async function list({ page, limit, sort, filters }) {
   const skip = (page - 1) * limit
   const [items, total] = await Promise.all([
     Bus.find(query).sort(sortSpec).skip(skip).limit(limit).lean().exec(),
-    Bus.countDocuments(query)
+    Bus.countDocuments(query),
   ])
   return { data: items, page, limit, total }
 }

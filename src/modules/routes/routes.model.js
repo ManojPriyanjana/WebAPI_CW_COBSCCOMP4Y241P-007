@@ -6,7 +6,7 @@ const RoutesSchema = new mongoose.Schema(
     name: { type: String, required: true },
     provinceFrom: { type: String, required: true },
     provinceTo: { type: String, required: true },
-    distanceKm: { type: Number, required: true }
+    distanceKm: { type: Number, required: true },
   },
   { timestamps: true }
 )

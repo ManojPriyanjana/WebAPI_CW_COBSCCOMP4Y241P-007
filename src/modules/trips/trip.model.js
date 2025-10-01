@@ -7,7 +7,7 @@ const TripSchema = new mongoose.Schema(
     serviceDate: { type: Date, required: true },
     schedDepart: { type: Date, required: true },
     schedArrive: { type: Date, required: true },
-    status: { type: String, enum: ['SCHEDULED', 'ONGOING', 'COMPLETED'], default: 'SCHEDULED' }
+    status: { type: String, enum: ['SCHEDULED', 'ONGOING', 'COMPLETED'], default: 'SCHEDULED' },
   },
   { timestamps: true }
 )

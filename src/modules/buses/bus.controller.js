@@ -7,7 +7,7 @@ export async function getBuses(req, res, next) {
   const { page, limit, sort } = parsePagination(req.query)
   const filters = {
     operator: asString(req.query?.operator),
-    status: asString(req.query?.status)
+    status: asString(req.query?.status),
   }
   try {
     const result = await service.list({ page, limit, sort, filters })

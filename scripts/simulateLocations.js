@@ -5,16 +5,16 @@ import LocationUpdate from '../src/modules/locations/locationUpdate.model.js'
 
 dotenv.config()
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 // Simple set of base points (lon, lat) to simulate a straight-ish route
 const baseRoutes = [
   [79.8612, 6.9271], // Colombo
-  [80.0433, 7.1460],
-  [80.2140, 7.2906],
-  [80.3765, 7.3350],
-  [80.6280, 7.2906],
-  [80.6350, 7.2940]
+  [80.0433, 7.146],
+  [80.214, 7.2906],
+  [80.3765, 7.335],
+  [80.628, 7.2906],
+  [80.635, 7.294],
 ]
 
 function jitter([lon, lat], scale = 0.01) {
@@ -28,7 +28,12 @@ async function ensureDemoBuses(n = 25) {
   if (count >= n) return
   const docs = []
   for (let i = 0; i < n; i++) {
-    docs.push({ regNo: `SIM-${String(i + 1).padStart(3, '0')}`, operator: 'SimOps', capacity: 40, status: 'ACTIVE' })
+    docs.push({
+      regNo: `SIM-${String(i + 1).padStart(3, '0')}`,
+      operator: 'SimOps',
+      capacity: 40,
+      status: 'ACTIVE',
+    })
   }
   await Bus.insertMany(docs, { ordered: false }).catch(() => {})
 }
@@ -54,7 +59,7 @@ async function main() {
         busId: b._id,
         ts: new Date(),
         location: { type: 'Point', coordinates: [lon, lat] },
-        speedKph: speed
+        speedKph: speed,
       })
     })
     await Promise.allSettled(ops)

@@ -27,9 +27,7 @@ export default function conditionalGet(req, res, next) {
   res.json = (data) => {
     try {
       const etag = computeETag(data)
-      const lastModifiedDate = getLastModifiedFromBody(
-        data?.data ? data.data : data
-      )
+      const lastModifiedDate = getLastModifiedFromBody(data?.data ? data.data : data)
 
       // Handle If-None-Match
       const inm = req.headers['if-none-match']

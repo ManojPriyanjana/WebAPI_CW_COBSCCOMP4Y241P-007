@@ -20,7 +20,7 @@ export async function findAll({ page, limit, sort, filters }) {
   if (filters?.provinceTo) query.provinceTo = filters.provinceTo
 
   // Sorting: 'name' or '-name'
-  let sortSpec = undefined
+  let sortSpec
   if (sort) {
     const desc = sort.startsWith('-')
     const key = desc ? sort.slice(1) : sort
@@ -30,7 +30,7 @@ export async function findAll({ page, limit, sort, filters }) {
   const skip = (page - 1) * limit
   const [items, total] = await Promise.all([
     Route.find(query).sort(sortSpec).skip(skip).limit(limit).lean().exec(),
-    Route.countDocuments(query)
+    Route.countDocuments(query),
   ])
   return { data: items, page, limit, total }
 }

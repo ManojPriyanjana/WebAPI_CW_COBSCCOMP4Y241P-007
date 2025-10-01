@@ -27,7 +27,7 @@ router.get('/stream/positions', async (req, res, next) => {
 
     // Watch new inserts
     const changeStream = LocationUpdate.watch([{ $match: { operationType: 'insert' } }], {
-      fullDocument: 'updateLookup'
+      fullDocument: 'updateLookup',
     })
 
     const onChange = (change) => {
@@ -38,7 +38,7 @@ router.get('/stream/positions', async (req, res, next) => {
         lat,
         lon,
         ts: doc.ts || doc.createdAt,
-        speedKph: doc.speedKph
+        speedKph: doc.speedKph,
       }
       res.write(`data: ${JSON.stringify(payload)}\n\n`)
     }
@@ -52,7 +52,11 @@ router.get('/stream/positions', async (req, res, next) => {
     // Cleanup on client close
     req.on('close', async () => {
       clearInterval(heartbeat)
-      try { await changeStream.close() } catch { /* noop */ }
+      try {
+        await changeStream.close()
+      } catch {
+        /* noop */
+      }
     })
   } catch (err) {
     next(err)
