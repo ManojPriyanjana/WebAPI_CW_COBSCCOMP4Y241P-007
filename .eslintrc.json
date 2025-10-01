@@ -19,5 +19,11 @@
     "prefer-const": ["error", { "destructuring": "all" }],
     "prettier/prettier": "error"
   },
+  "overrides": [
+    {
+      "files": ["**/__tests__/**/*.js", "src/test/**/*.js"],
+      "env": { "jest": true }
+    }
+  ],
   "ignorePatterns": ["node_modules/", "dist/", "server.js"]
 }

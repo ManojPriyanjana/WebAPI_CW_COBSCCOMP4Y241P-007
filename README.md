@@ -88,6 +88,20 @@ Access tokens expire in 15 minutes; refresh tokens in 7 days. Use the `Authoriza
   - POST `/api/v1/buses`
   - POST `/api/v1/trips`
 
+  ## Testing
+
+  Set `MONGO_URI_TEST` in your `.env` to a separate database (it will be dropped during tests). Then run:
+
+  ```powershell
+  npm test
+  ```
+
+  This runs Jest in-band with Supertest and generates coverage in the `coverage/` folder. Watch mode:
+
+  ```powershell
+  npm run test:watch
+  ```
+
 ### Routes API
 
 - List: `GET /api/v1/routes`

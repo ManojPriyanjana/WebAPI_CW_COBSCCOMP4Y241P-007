@@ -6,7 +6,12 @@ import { verifyJWT, requireRole } from '../../middleware/auth.js'
 const router = Router()
 
 // Public GET rate limiter: 60 req/min/ip
-const readLimiter = rateLimit({ windowMs: 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false })
+const readLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+})
 
 router.get('/', readLimiter, listAlerts)
 router.get('/:id', readLimiter, getAlert)

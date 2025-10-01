@@ -31,15 +31,24 @@ export async function getById(id) {
 
 export async function create(payload) {
   const { severity, message, validFrom, validTo, routeId, tripId } = payload || {}
-  if (!severity || !message || !validFrom || !validTo) throw createError(422, 'missing required fields')
+  if (!severity || !message || !validFrom || !validTo)
+    throw createError(422, 'missing required fields')
   const allowed = ['info', 'warning', 'critical']
   if (!allowed.includes(severity)) throw createError(422, 'invalid severity')
-  if (routeId && !mongoose.Types.ObjectId.isValid(routeId)) throw createError(422, 'invalid routeId')
+  if (routeId && !mongoose.Types.ObjectId.isValid(routeId))
+    throw createError(422, 'invalid routeId')
   if (tripId && !mongoose.Types.ObjectId.isValid(tripId)) throw createError(422, 'invalid tripId')
   const from = new Date(validFrom)
   const to = new Date(validTo)
   if (isNaN(from) || isNaN(to) || from > to) throw createError(422, 'invalid validity range')
-  const doc = await Alert.create({ severity, message, validFrom: from, validTo: to, routeId, tripId })
+  const doc = await Alert.create({
+    severity,
+    message,
+    validFrom: from,
+    validTo: to,
+    routeId,
+    tripId,
+  })
   return doc.toObject()
 }
 
@@ -63,14 +72,17 @@ export async function update(id, payload) {
     updates.validTo = v
   }
   if ('routeId' in payload) {
-    if (payload.routeId && !mongoose.Types.ObjectId.isValid(payload.routeId)) throw createError(422, 'invalid routeId')
+    if (payload.routeId && !mongoose.Types.ObjectId.isValid(payload.routeId))
+      throw createError(422, 'invalid routeId')
     updates.routeId = payload.routeId || undefined
   }
   if ('tripId' in payload) {
-    if (payload.tripId && !mongoose.Types.ObjectId.isValid(payload.tripId)) throw createError(422, 'invalid tripId')
+    if (payload.tripId && !mongoose.Types.ObjectId.isValid(payload.tripId))
+      throw createError(422, 'invalid tripId')
     updates.tripId = payload.tripId || undefined
   }
-  if (updates.validFrom && updates.validTo && updates.validFrom > updates.validTo) throw createError(422, 'invalid validity range')
+  if (updates.validFrom && updates.validTo && updates.validFrom > updates.validTo)
+    throw createError(422, 'invalid validity range')
   const alert = await Alert.findByIdAndUpdate(id, updates, { new: true }).lean()
   if (!alert) throw createError(404, 'alert not found')
   return alert

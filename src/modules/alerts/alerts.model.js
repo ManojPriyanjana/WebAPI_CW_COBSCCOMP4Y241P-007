@@ -9,7 +9,7 @@ const alertSchema = new Schema(
     severity: { type: String, enum: ['info', 'warning', 'critical'], required: true, index: true },
     message: { type: String, required: true },
     validFrom: { type: Date, required: true, index: true },
-    validTo: { type: Date, required: true, index: true }
+    validTo: { type: Date, required: true, index: true },
   },
   { timestamps: true }
 )
