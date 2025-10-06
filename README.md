@@ -23,6 +23,8 @@ npm run dev
 
 Visit http://localhost:3000/healthz to see `{ "status": "ok" }`.
 
+> **Heads up:** If you see `Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'cors'`, it means dependencies were not installed. Run `npm install` (or `npm ci`) once after cloning and the server will start normally—`cors` and the rest of the runtime deps are already tracked in `package.json`/`package-lock.json`.
+
 ## Observability and error handling
 
 - Structured logging via Pino (with pretty logs in non-production)
