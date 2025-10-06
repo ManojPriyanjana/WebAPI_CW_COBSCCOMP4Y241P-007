@@ -114,6 +114,26 @@ Access tokens expire in 15 minutes; refresh tokens in 7 days. Use the `Authoriza
 - Get by id: `GET /api/v1/routes/:id`
 - Get by code: `GET /api/v1/routes/by-code/:code`
 
+### Bus location endpoints
+
+- `POST /api/v1/buses/:id/locations`
+  - Requires `Authorization: Bearer <token>` for users with the `operator` role.
+  - Body: `{ lat, lon, ts?, speedKph?, heading?, accuracyM? }`
+    - `lat`/`lon` are required, validated against geographic bounds.
+    - `ts` defaults to the server time when omitted.
+    - Optional telemetry fields (`speedKph`, `heading`, `accuracyM`) are stored when supplied.
+  - Rate limited to 60 requests per minute per IP. Standard headers surface limits and remaining quota:
+    - `RateLimit-Limit`
+    - `RateLimit-Remaining`
+    - `RateLimit-Reset`
+- `GET /api/v1/buses/:id/locations/latest`
+  - Returns the most recent location update (`{ data: { ... } }`), or `null` if no samples exist yet.
+- `GET /api/v1/buses/:id/locations/history`
+  - Query parameters: `since`, `until`, `limit` (default 500, max 1000), `bbox=lon1,lat1,lon2,lat2` for rectangular geo filtering.
+  - Response: `{ data: [ ... ], meta: { limit, since?, until?, bbox? } }`.
+
+All GET responses participate in conditional caching. Provide `If-None-Match` or `If-Modified-Since` to receive `304 Not Modified` when the underlying data is unchanged; responses include both `ETag` and `Last-Modified` headers.
+
 ### No-DB startup (for UI/dev only)
 
 If you want to run the API without connecting to MongoDB (health/UI dev), use:
