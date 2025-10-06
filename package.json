@@ -13,7 +13,8 @@
     "format": "prettier --write .",
     "test": "cross-env NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest --runInBand --coverage",
     "test:watch": "cross-env NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest --watch",
-    "generate:api-guide": "node scripts/generateApiGuidePdf.js"
+    "generate:api-guide": "node scripts/generateApiGuidePdf.js",
+    "docs:serve": "redoc-cli serve openapi.yaml --watch"
   },
   "dependencies": {
     "argon2": "^0.41.1",
@@ -41,6 +42,7 @@
     "jest": "^29.7.0",
     "nodemon": "^3.1.4",
     "pdfkit": "^0.17.2",
+    "redoc-cli": "^0.13.21",
     "pino-pretty": "^11.2.2",
     "prettier": "^3.3.3",
     "supertest": "^7.0.0"

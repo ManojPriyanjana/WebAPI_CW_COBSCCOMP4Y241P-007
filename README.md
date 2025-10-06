@@ -25,6 +25,20 @@ Visit http://localhost:3000/healthz to see `{ "status": "ok" }`.
 
 > **Heads up:** If you see `Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'cors'`, it means dependencies were not installed. Run `npm install` (or `npm ci`) once after cloning and the server will start normally—`cors` and the rest of the runtime deps are already tracked in `package.json`/`package-lock.json`.
 
+## API Spec
+
+- [OpenAPI 3.1 definition](./openapi.yaml)
+- [Postman starter collection](./postman/ntc-api.postman_collection.json)
+
+Serve an interactive Redoc view during development (watches for changes):
+
+```bash
+npm install
+npm run docs:serve
+```
+
+The command uses the local `redoc-cli` dev dependency to host `openapi.yaml` with live reload.
+
 ## Observability and error handling
 
 - Structured logging via Pino (with pretty logs in non-production)
