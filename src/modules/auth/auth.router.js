@@ -9,6 +9,7 @@ const limiter = rateLimit({
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
 })
 
 router.post('/register', limiter, register)

@@ -6,6 +6,7 @@ const BusSchema = new mongoose.Schema(
     operator: { type: String, required: true },
     capacity: { type: Number, required: true, min: 1 },
     status: { type: String, enum: ['ACTIVE', 'INACTIVE'], default: 'ACTIVE' },
+    ownerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
   },
   { timestamps: true }
 )

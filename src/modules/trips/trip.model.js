@@ -8,6 +8,7 @@ const TripSchema = new mongoose.Schema(
     schedDepart: { type: Date, required: true },
     schedArrive: { type: Date, required: true },
     status: { type: String, enum: ['SCHEDULED', 'ONGOING', 'COMPLETED'], default: 'SCHEDULED' },
+    ownerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
   },
   { timestamps: true }
 )

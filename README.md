@@ -135,6 +135,73 @@ Access tokens expire in 15 minutes; refresh tokens in 7 days. Use the `Authoriza
 - Get by id: `GET /api/v1/routes/:id`
 - Get by code: `GET /api/v1/routes/by-code/:code`
 
+## Resource CRUD
+
+### Role matrix
+
+| Resource | Operation | Admin | Operator | Commuter |
+| --- | --- | --- | --- | --- |
+| Routes | POST / PATCH / DELETE | ✅ | ❌ | ❌ |
+| Buses | POST / PATCH / DELETE | ✅ | ✅ (own buses) | ❌ |
+| Trips | POST / PATCH / DELETE | ✅ | ✅ (own trips) | ❌ |
+
+> Ownership is tracked via `ownerId` on buses and trips. Operators can only mutate records where `ownerId` matches their user id. Admins can additionally pass `ownerId` in the payload to reassign ownership.
+
+### Routes CRUD examples
+
+```bash
+curl -X POST http://localhost:3000/api/v1/routes \
+  -H "Authorization: Bearer <admin token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "code": "RX01",
+    "name": "Express North",
+    "provinceFrom": "Northern",
+    "provinceTo": "Western",
+    "distanceKm": 180
+  }'
+```
+
+- `PATCH /api/v1/routes/:id` accepts `name`, `provinceFrom`, `provinceTo`, and `distanceKm` updates.
+- `DELETE /api/v1/routes/:id` removes the route (returns 204).
+- All list endpoints (`/api/v1/routes`, `/api/v1/buses`, `/api/v1/trips`) honor `page`, `limit`, `sort` (e.g., `-updatedAt`), and `filter[...]` style parameters.
+
+### Buses CRUD examples
+
+```bash
+curl -X POST http://localhost:3000/api/v1/buses \
+  -H "Authorization: Bearer <operator token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "regNo": "NB-5010",
+    "operator": "CityLink",
+    "capacity": 45
+  }'
+```
+
+- Operator-created buses automatically assign ownership to that operator. Admins can optionally include `ownerId`.
+- `PATCH /api/v1/buses/:id` accepts `operator`, `capacity`, `status`, and (admin-only) `ownerId`.
+- `DELETE /api/v1/buses/:id` requires admin or owning operator.
+
+### Trips CRUD examples
+
+```bash
+curl -X POST http://localhost:3000/api/v1/trips \
+  -H "Authorization: Bearer <operator token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "routeId": "<route objectId>",
+    "busId": "<bus objectId>",
+    "serviceDate": "2025-10-06T00:00:00.000Z",
+    "schedDepart": "2025-10-06T08:00:00.000Z",
+    "schedArrive": "2025-10-06T10:30:00.000Z"
+  }'
+```
+
+- Date fields must be valid ISO strings and `schedArrive` must be after `schedDepart`.
+- Operators can only use buses they own and can modify/delete trips where they are the owner; admins can update any trip and reassign ownership with `ownerId`.
+- Conditional GET support (ETag + Last-Modified) applies to all GET endpoints; provide `If-None-Match` or `If-Modified-Since` headers to leverage 304 responses.
+
 ### Bus location endpoints
 
 - `POST /api/v1/buses/:id/locations`

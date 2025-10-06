@@ -2,6 +2,21 @@ import mongoose from 'mongoose'
 import createError from 'http-errors'
 import Route from './routes.model.js'
 
+function normalizeString(value) {
+  if (value === undefined || value === null) return undefined
+  const str = String(value).trim()
+  return str.length ? str : undefined
+}
+
+function parseDistance(value) {
+  if (value === undefined || value === null) return undefined
+  const num = Number(value)
+  if (!Number.isFinite(num) || num <= 0) {
+    throw createError(422, 'distanceKm must be a positive number')
+  }
+  return num
+}
+
 function ensureDbConnected() {
   // 1 = connected, 2 = connecting. Fail fast unless fully connected
   if (mongoose.connection.readyState !== 1) {
@@ -47,4 +62,68 @@ export async function findById(id) {
 export async function findByCode(code) {
   ensureDbConnected()
   return Route.findOne({ code }).lean().exec()
+}
+
+export async function create(data) {
+  ensureDbConnected()
+  const doc = {
+    code: normalizeString(data.code),
+    name: normalizeString(data.name),
+    provinceFrom: normalizeString(data.provinceFrom),
+    provinceTo: normalizeString(data.provinceTo),
+    distanceKm: parseDistance(data.distanceKm),
+  }
+
+  if (!doc.code || !doc.name || !doc.provinceFrom || !doc.provinceTo || doc.distanceKm === undefined) {
+    throw createError(422, 'code, name, provinceFrom, provinceTo, distanceKm are required')
+  }
+
+  try {
+    const created = await Route.create(doc)
+    return created.toObject()
+  } catch (err) {
+    if (err?.code === 11000) throw createError(409, 'Route code already exists')
+    throw err
+  }
+}
+
+export async function update(id, changes) {
+  ensureDbConnected()
+  if (!mongoose.Types.ObjectId.isValid(id)) return null
+
+  const updateDoc = {}
+  if (changes.name !== undefined) {
+    const name = normalizeString(changes.name)
+    if (!name) throw createError(422, 'name cannot be empty')
+    updateDoc.name = name
+  }
+  if (changes.provinceFrom !== undefined) {
+    const provinceFrom = normalizeString(changes.provinceFrom)
+    if (!provinceFrom) throw createError(422, 'provinceFrom cannot be empty')
+    updateDoc.provinceFrom = provinceFrom
+  }
+  if (changes.provinceTo !== undefined) {
+    const provinceTo = normalizeString(changes.provinceTo)
+    if (!provinceTo) throw createError(422, 'provinceTo cannot be empty')
+    updateDoc.provinceTo = provinceTo
+  }
+  if (changes.distanceKm !== undefined) {
+    updateDoc.distanceKm = parseDistance(changes.distanceKm)
+  }
+
+  if (Object.keys(updateDoc).length === 0) {
+    return Route.findById(id).lean().exec()
+  }
+
+  const updated = await Route.findByIdAndUpdate(id, { $set: updateDoc }, { new: true, runValidators: true })
+    .lean()
+    .exec()
+  return updated
+}
+
+export async function remove(id) {
+  ensureDbConnected()
+  if (!mongoose.Types.ObjectId.isValid(id)) return null
+  const deleted = await Route.findByIdAndDelete(id).lean().exec()
+  return deleted ? true : null
 }
