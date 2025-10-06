@@ -25,5 +25,5 @@
       "env": { "jest": true }
     }
   ],
-  "ignorePatterns": ["node_modules/", "dist/", "server.js"]
+  "ignorePatterns": ["node_modules/", "dist/"]
 }

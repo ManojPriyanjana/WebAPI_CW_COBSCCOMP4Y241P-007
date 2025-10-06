@@ -6,10 +6,11 @@ import * as service from './routes.service.js'
 export async function getRoutes(req, res, next) {
   const { page, limit, sort } = parsePagination(req.query)
 
+  const filterObject = typeof req.query.filter === 'object' ? req.query.filter : {}
   const filters = {
-    name: asString(req.query?.['filter[name]']),
-    provinceFrom: asString(req.query?.['filter[provinceFrom]']),
-    provinceTo: asString(req.query?.['filter[provinceTo]']),
+    name: asString(filterObject.name ?? req.query?.['filter[name]']),
+    provinceFrom: asString(filterObject.provinceFrom ?? req.query?.['filter[provinceFrom]']),
+    provinceTo: asString(filterObject.provinceTo ?? req.query?.['filter[provinceTo]']),
   }
 
   try {

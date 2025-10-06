@@ -2,6 +2,8 @@
 
 # Express API Scaffold (ESM)
 
+> **Server entry point:** `src/server.js` (the legacy root-level `server.js` has been removed).
+
 ## Run locally
 
 1. Install dependencies
