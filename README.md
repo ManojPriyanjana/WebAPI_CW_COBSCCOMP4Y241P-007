@@ -62,6 +62,27 @@ node scripts/seedRoutes.js
 npm start
 ```
 
+## Simulation Data
+
+- Generate a rolling week of trip schedules:
+
+  ```powershell
+  node scripts/generateSimulationData.js --startDate 2025-10-06 --days 7 --csv
+  ```
+
+  - `--startDate` is any ISO date (defaults to today if omitted).
+  - `--days` defaults to 7; `--routeInterval`/`--busInterval` control minute gaps (defaults 5 and 25 respectively, short forms `--routes` and `--buses` also work).
+  - Passing `--csv` adds CSV mirrors for each JSON file; the JSON output alone already satisfies the project brief.
+  - Files land in `data/` as one JSON per day (`trips-YYYYMMDD.json`) plus an aggregate `simulation-week.json` (and optional `simulation-week.csv`).
+
+- Seed Mongo with the generated trips (routes/buses are upserted automatically):
+
+  ```powershell
+  node scripts/seedWeekTrips.js
+  ```
+
+  Add `--file <path>` if your dataset lives somewhere else.
+
 ## Authentication (JWT RS256)
 
 - Required env vars: `JWT_PRIVATE_KEY` and `JWT_PUBLIC_KEY` (PEM strings). For development you can generate a key pair with OpenSSL:
