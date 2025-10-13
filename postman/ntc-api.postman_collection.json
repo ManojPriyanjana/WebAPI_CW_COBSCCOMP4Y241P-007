@@ -246,6 +246,59 @@
             }
           },
           "response": []
+        },
+        {
+          "name": "GET /api/v1/buses/{id}/locations/latest",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "const body = pm.response.json();",
+                  "pm.test('includes next stop and destination ETA when available', function () {",
+                  "  pm.expect(body).to.have.property('data');",
+                  "  const estimates = body.data && body.data.estimates;",
+                  "  if (!estimates) {",
+                  "    pm.expect(estimates).to.eql(null);",
+                  "    return;",
+                  "  }",
+                  "  pm.expect(estimates).to.have.property('nextStop');",
+                  "  pm.expect(estimates).to.have.property('destination');",
+                  "  pm.expect(estimates.destination).to.have.property('etaMinutes');",
+                  "  pm.expect(estimates.delayMinutes).to.be.a('number');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/buses/{{busId}}/locations/latest",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "buses",
+                "{{busId}}",
+                "locations",
+                "latest"
+              ]
+            }
+          },
+          "response": []
         }
       ]
     },

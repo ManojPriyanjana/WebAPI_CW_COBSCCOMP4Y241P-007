@@ -1,7 +1,9 @@
 import mongoose from 'mongoose'
 import createError from 'http-errors'
 import LocationUpdate from './locationUpdate.model.js'
+import Trip from '../trips/trip.model.js'
 import * as busService from '../buses/bus.service.js'
+import { buildEtaPayload } from './etaEstimator.js'
 
 function ensureDbConnected() {
   if (mongoose.connection.readyState !== 1) {
@@ -41,6 +43,23 @@ function ensureActorCanWrite(bus, actor) {
   throw createError(403, 'forbidden')
 }
 
+async function findActiveTripForBus(busId, reference) {
+  const now = reference instanceof Date ? reference : new Date(reference ?? Date.now())
+  const windowStart = new Date(now.getTime() - 6 * 60 * 60000)
+  const windowEnd = new Date(now.getTime() + 6 * 60 * 60000)
+
+  return Trip.findOne({
+    busId,
+    status: { $in: ['SCHEDULED', 'ONGOING'] },
+    schedDepart: { $lte: windowEnd },
+    schedArrive: { $gte: windowStart },
+  })
+    .populate('fromStopId', 'name location')
+    .populate('toStopId', 'name location')
+    .lean()
+    .exec()
+}
+
 export async function recordLocation(busId, actor, { ts, coordinates, speedKph, heading, accuracyM }) {
   ensureDbConnected()
   const bus = await loadBusOrThrow(busId)
@@ -65,7 +84,32 @@ export async function getLatest(busId) {
     .sort({ ts: -1, createdAt: -1 })
     .lean()
     .exec()
-  return toDto(latest)
+  if (!latest) return null
+
+  const referenceTime = latest.ts ? new Date(latest.ts) : latest.createdAt ? new Date(latest.createdAt) : new Date()
+
+  const [recentSamples, trip] = await Promise.all([
+    LocationUpdate.find({ busId })
+      .sort({ ts: -1, createdAt: -1 })
+      .limit(5)
+      .lean()
+      .exec(),
+    findActiveTripForBus(busId, referenceTime),
+  ])
+
+  const dto = toDto(latest)
+  if (!dto) return null
+
+  dto.estimates = trip
+    ? buildEtaPayload({
+        now: referenceTime,
+        latestSample: latest,
+        trip,
+        recentSamples,
+      })
+    : null
+
+  return dto
 }
 
 export async function getHistory(busId, { since, until, limit, bbox }) {

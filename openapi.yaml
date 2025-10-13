@@ -487,12 +487,40 @@ components:
         createdAt:
           type: string
           format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        estimates:
+          type: object
+          nullable: true
+          properties:
+            nextStop:
+              $ref: '#/components/schemas/EtaStop'
+            destination:
+              $ref: '#/components/schemas/EtaStop'
+            delayMinutes:
+              type: integer
+              description: Difference between predicted arrival time and scheduled arrival, in minutes. Positive values indicate a delay.
       required:
         - id
         - busId
         - lat
         - lon
         - ts
+    EtaStop:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        etaMinutes:
+          type: integer
+          minimum: 0
+      required:
+        - id
+        - name
+        - etaMinutes
 paths:
   /healthz:
     get:
@@ -1435,7 +1463,7 @@ paths:
       security: []
       responses:
         '200':
-          description: Latest location (or null when absent)
+          description: Latest location (or null when absent). When trip schedule data is available, the payload includes ETA estimates for the next stop and destination.
           headers:
             ETag:
               $ref: '#/components/headers/ETag'

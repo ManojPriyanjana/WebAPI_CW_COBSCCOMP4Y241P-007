@@ -3,6 +3,11 @@ import mongoose from 'mongoose'
 import argon2 from 'argon2'
 import Bus from '../modules/buses/bus.model.js'
 import User from '../modules/users/users.model.js'
+import Route from '../modules/routes/routes.model.js'
+import Stop from '../modules/stops/stop.model.js'
+import Trip from '../modules/trips/trip.model.js'
+import LocationUpdate from '../modules/locations/locationUpdate.model.js'
+import { buildEtaPayload } from '../modules/locations/etaEstimator.js'
 
 const base = () => process.env.TEST_BASE_URL
 
@@ -51,30 +56,116 @@ async function createForeignOperatorToken() {
   return login.body.accessToken
 }
 
+async function seedTripForBus(busId, ownerId, referenceTime = Date.now()) {
+  const routeCode = `RT-${referenceTime}`
+  const route = await Route.create({
+    code: routeCode,
+    name: 'Location ETA Test Route',
+    provinceFrom: 'Western',
+    provinceTo: 'Central',
+    distanceKm: 120,
+  })
+
+  const stopKey = referenceTime
+  const [fromStop, toStop] = await Stop.create([
+    {
+      code: `ST-F-${stopKey}`,
+      name: 'Central Depot',
+      location: { type: 'Point', coordinates: [79.85, 6.93] },
+    },
+    {
+      code: `ST-T-${stopKey}`,
+      name: 'Northern Terminal',
+      location: { type: 'Point', coordinates: [80.02, 7.05] },
+    },
+  ])
+
+  const serviceDate = new Date(referenceTime)
+  serviceDate.setHours(0, 0, 0, 0)
+  const schedDepart = new Date(referenceTime - 5 * 60000)
+  const schedArrive = new Date(referenceTime + 45 * 60000)
+
+  const trip = await Trip.create({
+    routeId: route._id,
+    busId,
+    fromStopId: fromStop._id,
+    toStopId: toStop._id,
+    serviceDate,
+    schedDepart,
+    schedArrive,
+    status: 'ONGOING',
+    ownerId,
+  })
+
+  return { route, fromStop, toStop, trip, referenceTime, schedDepart, schedArrive }
+}
+
 describe('Bus location endpoints', () => {
   test('operator can create locations and latest endpoint returns newest point with caching headers', async () => {
     const operatorToken = await getOperatorToken()
     const busId = await createBusDoc()
+    const ownerId = await getOperatorId()
+    const { trip, toStop, referenceTime } = await seedTripForBus(busId, ownerId)
+
+    const samplePoints = [
+      { lat: 6.94, lon: 79.88, speedKph: 42, ts: new Date(referenceTime - 4 * 60000).toISOString() },
+      { lat: 6.98, lon: 79.94, speedKph: 44, ts: new Date(referenceTime - 2 * 60000).toISOString() },
+      { lat: 7.01, lon: 80.00, speedKph: 46, ts: new Date(referenceTime - 60000).toISOString() },
+    ]
 
     const unauth = await request(base()).post(`/api/v1/buses/${busId}/locations`).send({ lat: 6.9, lon: 79.9 })
     expect(unauth.status).toBe(401)
 
-    const createRes = await request(base())
-      .post(`/api/v1/buses/${busId}/locations`)
-      .set('Authorization', `Bearer ${operatorToken}`)
-      .send({ lat: 6.9123, lon: 79.8543, speedKph: 42 })
-    expect(createRes.status).toBe(201)
-    expect(createRes.body.data.busId).toBe(busId)
-    expect(createRes.body.data.speedKph).toBe(42)
+    for (const point of samplePoints) {
+      const createRes = await request(base())
+        .post(`/api/v1/buses/${busId}/locations`)
+        .set('Authorization', `Bearer ${operatorToken}`)
+        .send(point)
+      expect(createRes.status).toBe(201)
+      expect(createRes.body.data.busId).toBe(busId)
+    }
 
     const latestRes = await request(base()).get(`/api/v1/buses/${busId}/locations/latest`)
     expect(latestRes.status).toBe(200)
     expect(latestRes.body.data.busId).toBe(busId)
-    expect(latestRes.body.data.lat).toBeCloseTo(6.9123)
-    expect(latestRes.body.data.lon).toBeCloseTo(79.8543)
+    expect(latestRes.body.data.lat).toBeCloseTo(samplePoints.at(-1).lat)
+    expect(latestRes.body.data.lon).toBeCloseTo(samplePoints.at(-1).lon)
     expect(latestRes.headers.etag).toBeDefined()
     expect(latestRes.headers['last-modified']).toBeDefined()
     expect(latestRes.headers['cache-control']).toBe('no-store')
+
+    const latestDoc = await LocationUpdate.findOne({ busId })
+      .sort({ ts: -1, createdAt: -1 })
+      .lean()
+      .exec()
+    const populatedTrip = await Trip.findById(trip._id)
+      .populate('fromStopId', 'name location')
+      .populate('toStopId', 'name location')
+      .lean()
+      .exec()
+    const recentSamples = await LocationUpdate.find({ busId })
+      .sort({ ts: -1, createdAt: -1 })
+      .limit(5)
+      .lean()
+      .exec()
+
+    const reference = latestDoc?.ts ? new Date(latestDoc.ts) : latestDoc?.createdAt ? new Date(latestDoc.createdAt) : new Date()
+    const expectedEta = populatedTrip
+      ? buildEtaPayload({
+          now: reference,
+          latestSample: latestDoc,
+          trip: populatedTrip,
+          recentSamples,
+        })
+      : null
+
+  expect(expectedEta).not.toBeNull()
+  expect(latestRes.body.data.estimates).not.toBeNull()
+    expect(latestRes.body.data.estimates.destination.name).toBe(toStop.name)
+    expect(latestRes.body.data.estimates.destination.etaMinutes).toBe(expectedEta.destination.etaMinutes)
+    expect(latestRes.body.data.estimates.nextStop.name).toBe(expectedEta.nextStop.name)
+    expect(latestRes.body.data.estimates.nextStop.etaMinutes).toBe(expectedEta.nextStop.etaMinutes)
+    expect(latestRes.body.data.estimates.delayMinutes).toBe(expectedEta.delayMinutes)
 
     const cached = await request(base())
       .get(`/api/v1/buses/${busId}/locations/latest`)
