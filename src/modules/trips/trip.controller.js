@@ -31,6 +31,25 @@ export async function getTripById(req, res, next) {
   }
 }
 
+export async function searchTrips(req, res, next) {
+  const { page, limit, sort } = parsePagination(req.query)
+  try {
+    const result = await service.search({
+      fromStopId: req.query.fromStopId,
+      toStopId: req.query.toStopId,
+      date: req.query.date,
+      startTime: req.query.startTime,
+      endTime: req.query.endTime,
+      page,
+      limit,
+      sort,
+    })
+    return res.json(result)
+  } catch (err) {
+    return next(err)
+  }
+}
+
 export async function createTrip(req, res, next) {
   try {
     const created = await service.create(req.body, req.user)

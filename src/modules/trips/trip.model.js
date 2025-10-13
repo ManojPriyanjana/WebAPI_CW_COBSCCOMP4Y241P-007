@@ -4,6 +4,8 @@ const TripSchema = new mongoose.Schema(
   {
     routeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Route', required: true },
     busId: { type: mongoose.Schema.Types.ObjectId, ref: 'Bus', required: true },
+    fromStopId: { type: mongoose.Schema.Types.ObjectId, ref: 'Stop', required: true },
+    toStopId: { type: mongoose.Schema.Types.ObjectId, ref: 'Stop', required: true },
     serviceDate: { type: Date, required: true },
     schedDepart: { type: Date, required: true },
     schedArrive: { type: Date, required: true },

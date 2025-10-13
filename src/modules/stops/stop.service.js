@@ -17,7 +17,6 @@ export async function findAll({ page, limit, sort, filters }) {
   const query = {}
   if (filters?.code) query.code = filters.code
   if (filters?.name) query.name = { $regex: filters.name, $options: 'i' }
-  if (filters?.province) query.province = filters.province
 
   let sortSpec
   if (sort) {

@@ -259,6 +259,10 @@ components:
           type: string
         busId:
           type: string
+        fromStopId:
+          type: string
+        toStopId:
+          type: string
         serviceDate:
           type: string
           format: date
@@ -283,6 +287,8 @@ components:
         - id
         - routeId
         - busId
+        - fromStopId
+        - toStopId
         - serviceDate
         - schedDepart
         - schedArrive
@@ -293,6 +299,33 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Trip'
+        page:
+          type: integer
+        limit:
+          type: integer
+        total:
+          type: integer
+      required:
+        - data
+        - page
+        - limit
+        - total
+    TripSearchResult:
+      allOf:
+        - $ref: '#/components/schemas/Trip'
+        - type: object
+          properties:
+            fromStop:
+              $ref: '#/components/schemas/Stop'
+            toStop:
+              $ref: '#/components/schemas/Stop'
+    TripSearchResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/TripSearchResult'
         page:
           type: integer
         limit:
@@ -370,16 +403,19 @@ components:
           example: ST-001
         name:
           type: string
-        description:
-          type: string
-        lat:
-          type: number
-          format: float
-        lon:
-          type: number
-          format: float
-        province:
-          type: string
+        location:
+          description: GeoJSON Point describing the stop location (longitude, latitude)
+          type: object
+          properties:
+            type:
+              type: string
+              enum: [Point]
+            coordinates:
+              type: array
+              minItems: 2
+              maxItems: 2
+              items:
+                type: number
         createdAt:
           type: string
           format: date-time
@@ -390,8 +426,7 @@ components:
         - id
         - code
         - name
-        - lat
-        - lon
+        - location
     PaginatedStopList:
       type: object
       properties:
@@ -749,6 +784,112 @@ paths:
           description: Not modified since last request
         '500':
           description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/trips/search:
+    get:
+      tags: [Trips]
+      summary: Search scheduled trips between two stops within a departure window
+      operationId: searchTrips
+      parameters:
+        - name: fromStopId
+          in: query
+          required: true
+          description: Origin stop identifier
+          schema:
+            type: string
+        - name: toStopId
+          in: query
+          required: true
+          description: Destination stop identifier
+          schema:
+            type: string
+        - name: date
+          in: query
+          required: true
+          description: Service date in YYYY-MM-DD (Asia/Colombo timezone)
+          schema:
+            type: string
+            format: date
+          example: '2025-10-14'
+        - name: startTime
+          in: query
+          required: true
+          description: Earliest acceptable scheduled departure (HH:mm, 24h clock)
+          schema:
+            type: string
+            pattern: '^(?:[01]\d|2[0-3]):[0-5]\d$'
+          example: '08:00'
+        - name: endTime
+          in: query
+          required: true
+          description: Latest acceptable scheduled departure (HH:mm, 24h clock)
+          schema:
+            type: string
+            pattern: '^(?:[01]\d|2[0-3]):[0-5]\d$'
+          example: '10:00'
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: sort
+          in: query
+          description: Sort order (schedDepart or -schedDepart). Alias schedDeparture is also accepted.
+          schema:
+            type: string
+            enum: [schedDepart, -schedDepart, schedDeparture, -schedDeparture]
+          example: schedDeparture
+      responses:
+        '200':
+          description: Trips returned successfully
+          headers:
+            RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
+            Cache-Control:
+              description: Indicates cacheability of the response
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TripSearchResponse'
+              examples:
+                default:
+                  summary: Morning departures
+                  value:
+                    page: 1
+                    limit: 20
+                    total: 1
+                    data:
+                      - id: 652ff1c1bf0e4fb67d9e7a01
+                        routeId: 652ff1c1bf0e4fb67d9e7a00
+                        busId: 652ff1c1bf0e4fb67d9e7aff
+                        fromStopId: 652feebb4c3b8508c52ee201
+                        toStopId: 652feebb4c3b8508c52ee202
+                        serviceDate: '2025-10-14'
+                        schedDepart: '2025-10-14T03:15:00.000Z'
+                        schedArrive: '2025-10-14T05:00:00.000Z'
+                        status: SCHEDULED
+                        fromStop:
+                          id: 652feebb4c3b8508c52ee201
+                          code: STO-001
+                          name: Origin Terminal
+                          location:
+                            type: Point
+                            coordinates: [79.861, 6.927]
+                        toStop:
+                          id: 652feebb4c3b8508c52ee202
+                          code: STD-010
+                          name: Destination Terminal
+                          location:
+                            type: Point
+                            coordinates: [80.027, 7.001]
+        '422':
+          description: Invalid date/time window or identifiers
           content:
             application/json:
               schema:

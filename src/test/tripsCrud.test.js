@@ -1,5 +1,6 @@
 import request from 'supertest'
 import Trip from '../modules/trips/trip.model.js'
+import Stop from '../modules/stops/stop.model.js'
 
 const base = () => process.env.TEST_BASE_URL
 const PASSWORD = 'Passw0rd!'
@@ -43,6 +44,20 @@ describe('Trip CRUD with RBAC', () => {
     expect(routeRes.status).toBe(201)
     const routeId = routeRes.body._id
 
+    const stopKey = Date.now()
+    const [fromStop, toStop] = await Stop.create([
+      {
+        code: `STO-${stopKey}`,
+        name: 'Origin Exchange',
+        location: { type: 'Point', coordinates: [79.85, 6.93] },
+      },
+      {
+        code: `STD-${stopKey}`,
+        name: 'Destination Exchange',
+        location: { type: 'Point', coordinates: [80.02, 7.05] },
+      },
+    ])
+
     const busRes = await request(base())
       .post('/api/v1/buses')
       .set('Authorization', `Bearer ${operatorToken}`)
@@ -60,6 +75,8 @@ describe('Trip CRUD with RBAC', () => {
       .send({
         routeId,
         busId,
+        fromStopId: fromStop._id,
+        toStopId: toStop._id,
         serviceDate,
         schedDepart: arrive,
         schedArrive: depart,
@@ -72,6 +89,8 @@ describe('Trip CRUD with RBAC', () => {
       .send({
         routeId,
         busId,
+        fromStopId: fromStop._id,
+        toStopId: toStop._id,
         serviceDate,
         schedDepart: depart,
         schedArrive: arrive,

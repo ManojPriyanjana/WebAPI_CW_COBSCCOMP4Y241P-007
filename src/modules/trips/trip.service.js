@@ -3,7 +3,10 @@ import createError from 'http-errors'
 import Trip from './trip.model.js'
 import Route from '../routes/routes.model.js'
 import Bus from '../buses/bus.model.js'
+import Stop from '../stops/stop.model.js'
 import {
+  combineServiceDateAndTime,
+  ensureStartBeforeEnd,
   getServiceDateRange,
   isServiceDateString,
   parseDateTimeInput,
@@ -35,6 +38,21 @@ function parseStatus(value) {
   return status
 }
 
+function resolveSearchSort(rawSort) {
+  const input = rawSort ?? 'schedDepart'
+  const mapping = {
+    schedDepart: { field: 'schedDepart', dir: 1 },
+    '-schedDepart': { field: 'schedDepart', dir: -1 },
+    schedDeparture: { field: 'schedDepart', dir: 1 },
+    '-schedDeparture': { field: 'schedDepart', dir: -1 },
+  }
+  const resolved = mapping[input]
+  if (!resolved) {
+    throw createError(422, 'sort must be one of schedDepart, -schedDepart, schedDeparture, -schedDeparture')
+  }
+  return { [resolved.field]: resolved.dir }
+}
+
 function ensureTripOwner(user, trip) {
   if (!user) throw createError(401, 'unauthorized')
   if (user.role === 'admin') return true
@@ -57,6 +75,11 @@ async function ensureBus(busId, user) {
     throw createError(403, 'forbidden')
   }
   return bus
+}
+
+async function ensureStop(stopId, fieldName) {
+  const exists = await Stop.exists({ _id: stopId })
+  if (!exists) throw createError(404, `${fieldName ?? 'stopId'} not found`)
 }
 
 function ensureDbConnected() {
@@ -105,6 +128,8 @@ export async function create(data, user) {
   ensureDbConnected()
   const routeId = parseObjectId(data.routeId, 'routeId')
   const busId = parseObjectId(data.busId, 'busId')
+  const fromStopId = parseObjectId(data.fromStopId, 'fromStopId')
+  const toStopId = parseObjectId(data.toStopId, 'toStopId')
   const serviceDate = parseDateTime(data.serviceDate, 'serviceDate')
   const schedDepart = parseDateTime(data.schedDepart, 'schedDepart')
   const schedArrive = parseDateTime(data.schedArrive, 'schedArrive')
@@ -112,11 +137,18 @@ export async function create(data, user) {
   const status = parseStatus(data.status) ?? 'SCHEDULED'
   const ownerId = user?.role === 'operator' ? user.id : data.ownerId ? parseObjectId(data.ownerId, 'ownerId') : undefined
 
-  await Promise.all([ensureRoute(routeId), ensureBus(busId, user)])
+  await Promise.all([
+    ensureRoute(routeId),
+    ensureBus(busId, user),
+    ensureStop(fromStopId, 'fromStopId'),
+    ensureStop(toStopId, 'toStopId'),
+  ])
 
   const trip = await Trip.create({
     routeId,
     busId,
+    fromStopId,
+    toStopId,
     serviceDate,
     schedDepart,
     schedArrive,
@@ -146,6 +178,18 @@ export async function update(id, changes, user) {
     const busId = parseObjectId(changes.busId, 'busId')
     await ensureBus(busId, user)
     updateDoc.busId = busId
+  }
+
+  if (changes.fromStopId !== undefined) {
+    const fromStopId = parseObjectId(changes.fromStopId, 'fromStopId')
+    await ensureStop(fromStopId, 'fromStopId')
+    updateDoc.fromStopId = fromStopId
+  }
+
+  if (changes.toStopId !== undefined) {
+    const toStopId = parseObjectId(changes.toStopId, 'toStopId')
+    await ensureStop(toStopId, 'toStopId')
+    updateDoc.toStopId = toStopId
   }
 
   let effectiveDepart = existing.schedDepart
@@ -198,4 +242,103 @@ export async function remove(id, user) {
   ensureTripOwner(user, existing)
   await Trip.deleteOne({ _id: id })
   return true
+}
+
+export async function search({
+  fromStopId,
+  toStopId,
+  date,
+  startTime,
+  endTime,
+  page,
+  limit,
+  sort,
+}) {
+  ensureDbConnected()
+  const fromId = parseObjectId(fromStopId, 'fromStopId')
+  const toId = parseObjectId(toStopId, 'toStopId')
+  if (date === undefined || date === null || date === '') {
+    throw createError(422, 'date is required')
+  }
+  if (startTime === undefined || startTime === null || startTime === '') {
+    throw createError(422, 'startTime is required')
+  }
+  if (endTime === undefined || endTime === null || endTime === '') {
+    throw createError(422, 'endTime is required')
+  }
+
+  const [startInstant, endInstant] = [
+    combineServiceDateAndTime(date, startTime, { dateField: 'date', timeField: 'startTime' }),
+    combineServiceDateAndTime(date, endTime, { dateField: 'date', timeField: 'endTime' }),
+  ]
+  ensureStartBeforeEnd(startInstant, endInstant, 'startTime', 'endTime')
+
+  const { start: serviceStart, end: serviceEnd } = getServiceDateRange(date, 'date')
+
+  await Promise.all([
+    ensureStop(fromId, 'fromStopId'),
+    ensureStop(toId, 'toStopId'),
+  ])
+
+  const match = {
+    fromStopId: fromId,
+    toStopId: toId,
+    serviceDate: { $gte: serviceStart, $lte: serviceEnd },
+    schedDepart: { $gte: startInstant, $lte: endInstant },
+  }
+
+  const sortSpec = resolveSearchSort(sort)
+  const skip = (page - 1) * limit
+
+  const [items, total] = await Promise.all([
+    Trip.find(match)
+      .sort(sortSpec)
+      .skip(skip)
+      .limit(limit)
+      .populate('fromStopId')
+      .populate('toStopId')
+      .lean()
+      .exec(),
+    Trip.countDocuments(match),
+  ])
+
+  return {
+    data: items.map(mapTripSearchResult),
+    page,
+    limit,
+    total,
+  }
+}
+
+function mapStopDocument(stopDoc) {
+  if (!stopDoc || typeof stopDoc !== 'object') return undefined
+  if (!stopDoc._id) return undefined
+  return {
+    _id: stopDoc._id,
+    code: stopDoc.code,
+    name: stopDoc.name,
+    location: stopDoc.location,
+    createdAt: stopDoc.createdAt,
+  }
+}
+
+function mapTripSearchResult(doc) {
+  const fromStopDoc = doc.fromStopId && doc.fromStopId.code ? doc.fromStopId : undefined
+  const toStopDoc = doc.toStopId && doc.toStopId.code ? doc.toStopId : undefined
+  return {
+    _id: doc._id,
+    routeId: doc.routeId,
+    busId: doc.busId,
+    fromStopId: fromStopDoc?._id ?? doc.fromStopId,
+    toStopId: toStopDoc?._id ?? doc.toStopId,
+    serviceDate: doc.serviceDate,
+    schedDepart: doc.schedDepart,
+    schedArrive: doc.schedArrive,
+    status: doc.status,
+    ownerId: doc.ownerId,
+    createdAt: doc.createdAt,
+    updatedAt: doc.updatedAt,
+    fromStop: mapStopDocument(fromStopDoc),
+    toStop: mapStopDocument(toStopDoc),
+  }
 }

@@ -28,18 +28,12 @@ async function seedStops() {
     {
       code: 'ST-001',
       name: 'Fort Central',
-      description: 'Main interchange',
-      lat: 6.935,
-      lon: 79.852,
-      province: 'Western',
+      location: { type: 'Point', coordinates: [79.852, 6.935] },
     },
     {
       code: 'ST-002',
       name: 'Galle Face',
-      description: 'Coastal stop',
-      lat: 6.912,
-      lon: 79.854,
-      province: 'Western',
+      location: { type: 'Point', coordinates: [79.854, 6.912] },
     },
   ])
 }
@@ -94,10 +88,7 @@ describe('Collection ETag behaviour', () => {
     await Stop.create({
       code: 'ST-003',
       name: 'Colpetty',
-      description: 'Urban stop',
-      lat: 6.9101,
-      lon: 79.8498,
-      province: 'Western',
+      location: { type: 'Point', coordinates: [79.8498, 6.9101] },
     })
 
     const refreshed = await request(base())

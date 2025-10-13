@@ -9,7 +9,6 @@ export async function getStops(req, res, next) {
   const filters = {
     code: asString(filterObject.code ?? req.query?.['filter[code]']),
     name: asString(filterObject.name ?? req.query?.['filter[name]']),
-    province: asString(filterObject.province ?? req.query?.['filter[province]']),
   }
 
   try {
