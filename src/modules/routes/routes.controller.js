@@ -1,6 +1,6 @@
-import createError from 'http-errors'
 import { parsePagination } from '../common/pagination.js'
 import { asString, pick } from '../common/validate.js'
+import { httpError } from '../../middleware/errors.js'
 import * as service from './routes.service.js'
 
 export async function getRoutes(req, res, next) {
@@ -15,7 +15,7 @@ export async function getRoutes(req, res, next) {
 
   try {
     const result = await service.findAll({ page, limit, sort, filters })
-    return res.json(result)
+    return res.json({ data: result.data, page: result.page, limit: result.limit, total: result.total })
   } catch (err) {
     return next(err)
   }
@@ -25,7 +25,7 @@ export async function getRouteById(req, res, next) {
   const id = req.params.id
   try {
     const route = await service.findById(id)
-    if (!route) return next(createError(404, 'Route not found'))
+    if (!route) return next(httpError(404, 'Route not found'))
     return res.json(route)
   } catch (err) {
     return next(err)
@@ -36,7 +36,7 @@ export async function getRouteByCode(req, res, next) {
   const code = req.params.code
   try {
     const route = await service.findByCode(code)
-    if (!route) return next(createError(404, 'Route not found'))
+    if (!route) return next(httpError(404, 'Route not found'))
     return res.json(route)
   } catch (err) {
     return next(err)
@@ -58,7 +58,7 @@ export async function updateRoute(req, res, next) {
   const changes = pick(req.body, ['name', 'provinceFrom', 'provinceTo', 'distanceKm'])
   try {
     const updated = await service.update(id, changes)
-    if (!updated) return next(createError(404, 'Route not found'))
+    if (!updated) return next(httpError(404, 'Route not found'))
     return res.json(updated)
   } catch (err) {
     return next(err)
@@ -69,7 +69,7 @@ export async function deleteRoute(req, res, next) {
   const id = req.params.id
   try {
     const removed = await service.remove(id)
-    if (!removed) return next(createError(404, 'Route not found'))
+    if (!removed) return next(httpError(404, 'Route not found'))
     return res.status(204).end()
   } catch (err) {
     return next(err)

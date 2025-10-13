@@ -1,6 +1,14 @@
 import createError from 'http-errors'
 import { baseLogger } from './logger.js'
 
+export function httpError(status, message, details) {
+  const err = createError(status, message)
+  if (details !== undefined) {
+    err.details = details
+  }
+  return err
+}
+
 // Async wrapper to catch errors without try/catch in each route
 export const asyncHandler = (fn) => (req, res, next) => {
   Promise.resolve(fn(req, res, next)).catch(next)
@@ -24,6 +32,7 @@ export function errorHandler(err, req, res, next) {
     error: {
       code: status,
       message: httpErr.message,
+      ...(httpErr.details !== undefined ? { details: httpErr.details } : {}),
     },
   }
 

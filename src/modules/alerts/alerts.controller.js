@@ -1,10 +1,16 @@
 import { asyncHandler } from '../../middleware/errors.js'
+import { parsePagination } from '../common/pagination.js'
 import * as svc from './alerts.service.js'
 
 export const listAlerts = asyncHandler(async (req, res) => {
   const { routeId, tripId, severity } = req.query || {}
+  const { page, limit } = parsePagination(req.query)
   const data = await svc.list({ routeId, tripId, severity })
-  res.json({ data })
+  const total = data.length
+  const start = (page - 1) * limit
+  const end = start + limit
+  const sliced = data.slice(start, end)
+  res.json({ data: sliced, page, limit, total })
 })
 
 export const getAlert = asyncHandler(async (req, res) => {

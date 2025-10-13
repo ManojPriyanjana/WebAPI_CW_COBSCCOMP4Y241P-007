@@ -23,3 +23,6 @@ docs/
 # Local documentation tooling
 scripts/generateApiGuidePdf.js
 scripts/generateEndpointsPdf.js
+
+#report
+REPORT.md

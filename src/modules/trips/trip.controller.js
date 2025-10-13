@@ -1,6 +1,6 @@
-import createError from 'http-errors'
 import { parsePagination } from '../common/pagination.js'
 import { asString, pick } from '../common/validate.js'
+import { httpError } from '../../middleware/errors.js'
 import * as service from './trip.service.js'
 
 export async function getTrips(req, res, next) {
@@ -15,7 +15,7 @@ export async function getTrips(req, res, next) {
   }
   try {
     const result = await service.list({ page, limit, sort, filters })
-    return res.json(result)
+    return res.json({ data: result.data, page: result.page, limit: result.limit, total: result.total })
   } catch (err) {
     return next(err)
   }
@@ -24,7 +24,7 @@ export async function getTrips(req, res, next) {
 export async function getTripById(req, res, next) {
   try {
     const trip = await service.getById(req.params.id)
-    if (!trip) return next(createError(404, 'Trip not found'))
+    if (!trip) return next(httpError(404, 'Trip not found'))
     return res.json(trip)
   } catch (err) {
     return next(err)
@@ -52,7 +52,7 @@ export async function updateTrip(req, res, next) {
   ])
   try {
     const updated = await service.update(req.params.id, payload, req.user)
-    if (!updated) return next(createError(404, 'Trip not found'))
+    if (!updated) return next(httpError(404, 'Trip not found'))
     return res.json(updated)
   } catch (err) {
     return next(err)
@@ -62,7 +62,7 @@ export async function updateTrip(req, res, next) {
 export async function deleteTrip(req, res, next) {
   try {
     const removed = await service.remove(req.params.id, req.user)
-    if (!removed) return next(createError(404, 'Trip not found'))
+    if (!removed) return next(httpError(404, 'Trip not found'))
     return res.status(204).end()
   } catch (err) {
     return next(err)
