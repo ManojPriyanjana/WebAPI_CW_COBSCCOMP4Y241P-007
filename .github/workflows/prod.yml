@@ -19,23 +19,37 @@ jobs:
 
       - name: Build
         run: |
-          npm ci
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install --no-audit --no-fund
+          fi
           npm run build || echo "no build step"
 
-      # Upload code to EC2 using SCP
+      # Ensure target dir exists on EC2
+      - name: Prepare target dir on EC2
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            sudo mkdir -p ${{ secrets.PROD_DIR }}
+            sudo chown -R $USER:$USER ${{ secrets.PROD_DIR }}
+
+      # Upload source to EC2
       - name: Upload build via SCP
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
+          port: 22
           source: "."
           target: ${{ secrets.PROD_DIR }}
-          rm: true
           overwrite: true
-          exclude: ".git,.github,node_modules"
 
-      # SSH into EC2 and restart PM2
+      # Install deps and restart PM2 on EC2
       - name: Install deps & restart PM2 on EC2
         uses: appleboy/ssh-action@v1.2.0
         with:
@@ -44,8 +58,12 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           script: |
             cd ${{ secrets.PROD_DIR }}
-            npm ci --omit=dev
+            if [ -f package-lock.json ]; then
+              npm ci --omit=dev
+            else
+              npm install --omit=dev --no-audit --no-fund
+            fi
             pm2 describe ntc-api-prod >/dev/null 2>&1 && pm2 reload ntc-api-prod || pm2 start "node src/server.js" --name ntc-api-prod --update-env --env production
             pm2 save
-            # optional: verify site
-            curl -I --max-time 5 https://your-domain.com || true
+            # (optional) quick probe; replace with your real domain when ready
+            # curl -I --max-time 5 https://your-domain.com || true
