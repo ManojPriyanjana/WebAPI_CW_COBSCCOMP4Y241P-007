@@ -109,6 +109,13 @@ components:
         type: object
         additionalProperties:
           type: string
+    AlertsActiveParam:
+      name: active
+      in: query
+      description: "Filter alerts by active state. When omitted the API returns only currently active alerts. Set to `false` to retrieve expired or upcoming alerts."
+      schema:
+        type: boolean
+      example: true
     IfNoneMatchHeader:
       name: If-None-Match
       in: header
@@ -746,6 +753,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/PageParam'
         - $ref: '#/components/parameters/LimitParam'
+        - $ref: '#/components/parameters/AlertsActiveParam'
         - $ref: '#/components/parameters/SortParam'
         - $ref: '#/components/parameters/FilterParam'
         - $ref: '#/components/parameters/IfNoneMatchHeader'
@@ -1940,64 +1948,65 @@ paths:
           required: true
           schema:
             type: string
-                          type: object
-                          properties:
-                            data:
-                              $ref: '#/components/schemas/Alert'
-                          required: [data]
+      security:
+        - bearerAuth: []
+      requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
               properties:
-                title:
-                  type: string
-                body:
-                  type: string
                 severity:
                   type: string
                   enum: [info, warning, critical]
-                type:
+                message:
                   type: string
-                routes:
-                security:
-                  - bearerAuth: []
-                  type: array
-                  items:
-                    type: string
-                startAt:
+                validFrom:
                   type: string
                   format: date-time
-                endAt:
+                validTo:
+                  type: string
+                  format: date-time
+                routeId:
+                  type: string
+                tripId:
+                  type: string
+                operatorId:
+                  type: string
+              additionalProperties: false
+      responses:
+        '200':
           description: Alert updated
           content:
             application/json:
-                          message:
-                            type: string
-                          validFrom:
-                            type: string
-                            format: date-time
-                          validTo:
-                            type: string
-                            format: date-time
-                          routeId:
-                            type: string
-                          tripId:
-                            type: string
-                          operatorId:
-                            type: string
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Alert'
+                required: [data]
+        '404':
+          description: Alert not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      tags: [Alerts]
+      summary: Delete an alert
+      description: >-
+        Deletes the alert and records an audit entry.
+      operationId: deleteAlert
       parameters:
         - name: id
           in: path
           required: true
           schema:
             type: string
-                          type: object
-                          properties:
-                            data:
-                              $ref: '#/components/schemas/Alert'
-                          required: [data]
+      security:
+        - bearerAuth: []
+      responses:
         '204':
           description: Alert deleted
         '404':
@@ -2056,6 +2065,41 @@ paths:
                         schema:
                           $ref: '#/components/schemas/Error'
                 description: Server-Sent Events payload (data lines containing `LocationUpdate` JSON)
+        '503':
+          description: Stream unavailable (e.g. MongoDB disconnected)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /stream/trips/{tripId}/status:
+    get:
+      tags: [Streaming]
+      summary: Stream trip status changes and related alerts via Server-Sent Events
+      description: >-
+        Opens a Server-Sent Events connection that publishes `status` events whenever the trip status
+        changes or trip-scoped alerts are created or updated. The stream declares a 15 second retry
+        interval and emits heartbeat comments every 15 seconds.
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema:
+            type: string
+      security: []
+      responses:
+        '200':
+          description: Stream opened successfully
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: Server-Sent Events payload containing trip status or alert JSON objects.
+        '404':
+          description: Trip not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '503':
           description: Stream unavailable (e.g. MongoDB disconnected)
           content:

@@ -2,15 +2,21 @@ import { asyncHandler } from '../../middleware/errors.js'
 import { parsePagination } from '../common/pagination.js'
 import * as svc from './alerts.service.js'
 
+function parseBoolean(value) {
+  if (value === undefined) return undefined
+  if (typeof value === 'boolean') return value
+  const normalized = String(value).trim().toLowerCase()
+  if (['true', '1', 'yes', 'on'].includes(normalized)) return true
+  if (['false', '0', 'no', 'off'].includes(normalized)) return false
+  return undefined
+}
+
 export const listAlerts = asyncHandler(async (req, res) => {
   const { routeId, tripId, severity } = req.query || {}
   const { page, limit } = parsePagination(req.query)
-  const data = await svc.list({ routeId, tripId, severity })
-  const total = data.length
-  const start = (page - 1) * limit
-  const end = start + limit
-  const sliced = data.slice(start, end)
-  res.json({ data: sliced, page, limit, total })
+  const active = parseBoolean(req.query?.active)
+  const { data, total } = await svc.list({ routeId, tripId, severity, active, page, limit })
+  res.json({ data, page, limit, total })
 })
 
 export const getAlert = asyncHandler(async (req, res) => {
@@ -32,6 +38,6 @@ export const updateAlert = asyncHandler(async (req, res) => {
 
 export const deleteAlert = asyncHandler(async (req, res) => {
   const { id } = req.params
-  const data = await svc.remove(id, req.user)
-  res.json(data)
+  await svc.remove(id, req.user)
+  res.status(204).send()
 })

@@ -64,8 +64,8 @@ describe('Alerts ownership enforcement', () => {
     const deleteOk = await request(base())
       .delete(`/api/v1/alerts/${alertId}`)
       .set('Authorization', `Bearer ${admin.token}`)
-    expect(deleteOk.status).toBe(200)
-    expect(deleteOk.body.success).toBe(true)
+    expect(deleteOk.status).toBe(204)
+    expect(deleteOk.body).toEqual({})
 
     const auditEntries = await AdminAudit.find({ targetType: 'alert', targetId: alertId })
       .sort({ at: 1 })

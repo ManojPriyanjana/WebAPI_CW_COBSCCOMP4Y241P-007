@@ -21,9 +21,17 @@ function resolveOperatorId({ actor, operatorId }) {
   return operatorId
 }
 
-export async function list({ routeId, tripId, severity }) {
+export async function list({ routeId, tripId, severity, active, page, limit }) {
   const now = new Date()
-  const query = { validFrom: { $lte: now }, validTo: { $gte: now } }
+  const query = {}
+
+  if (active === undefined || active === true) {
+    query.validFrom = { $lte: now }
+    query.validTo = { $gte: now }
+  } else if (active === false) {
+    query.$or = [{ validFrom: { $gt: now } }, { validTo: { $lt: now } }]
+  }
+
   if (routeId) {
     if (!mongoose.Types.ObjectId.isValid(routeId)) throw createError(422, 'invalid routeId')
     query.routeId = routeId
@@ -37,8 +45,19 @@ export async function list({ routeId, tripId, severity }) {
     if (!allowed.includes(severity)) throw createError(422, 'invalid severity')
     query.severity = severity
   }
-  const data = await Alert.find(query).sort({ validFrom: -1 }).lean()
-  return data
+
+  const skip = (page - 1) * limit
+
+  const [data, total] = await Promise.all([
+    Alert.find(query)
+      .sort({ validFrom: -1, createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    Alert.countDocuments(query),
+  ])
+
+  return { data, total }
 }
 
 export async function getById(id) {

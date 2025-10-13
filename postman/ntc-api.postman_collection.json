@@ -21,6 +21,10 @@
     {
       "key": "busId",
       "value": "<replace-with-bus-id>"
+    },
+    {
+      "key": "tripId",
+      "value": "<replace-with-trip-id>"
     }
   ],
   "item": [
@@ -342,6 +346,26 @@
       "item": [
         {
           "name": "GET /api/v1/alerts",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "const body = pm.response.json();",
+                  "pm.test('includes pagination metadata', function () {",
+                  "  pm.expect(body).to.have.property('data');",
+                  "  pm.expect(body).to.have.property('page', 1);",
+                  "  pm.expect(body).to.have.property('limit', 5);",
+                  "  pm.expect(body).to.have.property('total');",
+                  "});"
+                ]
+              }
+            }
+          ],
           "request": {
             "method": "GET",
             "header": [
@@ -351,7 +375,7 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/alerts?limit=5",
+              "raw": "{{baseUrl}}/api/v1/alerts?page=1&limit=5&active=true",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -362,8 +386,16 @@
               ],
               "query": [
                 {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
                   "key": "limit",
                   "value": "5"
+                },
+                {
+                  "key": "active",
+                  "value": "true"
                 }
               ]
             }
@@ -389,6 +421,27 @@
               "path": [
                 "stream",
                 "positions"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /stream/trips/{id}/status",
+          "request": {
+            "method": "GET",
+            "description": "Server-Sent Events stream for trip status and alert updates. A valid tripId is required.",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/stream/trips/{{tripId}}/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "stream",
+                "trips",
+                "{{tripId}}",
+                "status"
               ]
             }
           },
