@@ -54,6 +54,26 @@ components:
         minimum: 1
         maximum: 1000
         default: 20
+    ServiceDateParam:
+      name: serviceDate
+      in: query
+      description: >-
+        Calendar date in YYYY-MM-DD interpreted in the service timezone (Asia/Colombo).
+        When supplied, values are normalized to the corresponding start-of-day instant.
+      schema:
+        type: string
+        format: date
+      example: '2025-10-06'
+    ServiceTimeParam:
+      name: time
+      in: query
+      description: >-
+        Local time in HH:mm (24h) interpreted in the service timezone (Asia/Colombo).
+        Used together with serviceDate to compose precise instants.
+      schema:
+        type: string
+        pattern: '^(?:[01]\d|2[0-3]):[0-5]\d$'
+      example: '07:30'
     SortParam:
       name: sort
       in: query
@@ -1045,13 +1065,19 @@ paths:
             type: string
         - name: since
           in: query
-          description: Only include samples captured at or after this timestamp
+          description: >-
+            Only include samples captured at or after this timestamp. Accepts ISO 8601
+            instants or service-local date/time strings (YYYY-MM-DD or HH:mm) interpreted in
+            Asia/Colombo timezone.
           schema:
             type: string
             format: date-time
         - name: until
           in: query
-          description: Only include samples captured before this timestamp
+          description: >-
+            Only include samples captured before this timestamp. Accepts ISO 8601 instants
+            or service-local date/time strings (YYYY-MM-DD or HH:mm) interpreted in
+            Asia/Colombo timezone.
           schema:
             type: string
             format: date-time
@@ -1117,6 +1143,13 @@ paths:
         - $ref: '#/components/parameters/LimitParam'
         - $ref: '#/components/parameters/SortParam'
         - $ref: '#/components/parameters/FilterParam'
+        - name: filter[serviceDate]
+          in: query
+          description: >-
+            Service date (YYYY-MM-DD) interpreted as Asia/Colombo time. Normalized to
+            the start of day instant before filtering.
+          schema:
+            type: string
         - $ref: '#/components/parameters/IfNoneMatchHeader'
         - $ref: '#/components/parameters/IfModifiedSinceHeader'
       security: []

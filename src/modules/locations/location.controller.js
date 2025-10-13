@@ -1,6 +1,7 @@
 import mongoose from 'mongoose'
 import createError from 'http-errors'
 import { asyncHandler } from '../../middleware/errors.js'
+import { ensureStartBeforeEnd, parseDateTimeInput } from '../../utils/datetime.js'
 import * as service from './location.service.js'
 
 function parseObjectId(value) {
@@ -22,11 +23,13 @@ function parseNumber(value, { field, required = false, min, max }) {
   return num
 }
 
-function parseDate(value, { field }) {
+function parseDateTimeQuery(value, { field }) {
   if (value === undefined || value === null || value === '') return undefined
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) throw createError(422, `${field} must be a valid ISO date`)
-  return date
+  try {
+    return parseDateTimeInput(String(value), field)
+  } catch (err) {
+    throw createError(err.status ?? 422, err.message)
+  }
 }
 
 function parseBBox(value) {
@@ -52,8 +55,8 @@ function parseBBox(value) {
 
 function serializeMeta({ since, until, limit, bbox }) {
   const meta = { limit }
-  if (since) meta.since = since
-  if (until) meta.until = until
+  if (since) meta.since = since.toISOString()
+  if (until) meta.until = until.toISOString()
   if (bbox) meta.bbox = bbox
   return meta
 }
@@ -62,7 +65,7 @@ export const postBusLocation = asyncHandler(async (req, res) => {
   const busId = parseObjectId(req.params.id)
   const lat = parseNumber(req.body?.lat, { field: 'lat', required: true, min: -90, max: 90 })
   const lon = parseNumber(req.body?.lon, { field: 'lon', required: true, min: -180, max: 180 })
-  const ts = parseDate(req.body?.ts, { field: 'ts' }) || new Date()
+  const ts = parseDateTimeQuery(req.body?.ts, { field: 'ts' }) || new Date()
   const speedKph = parseNumber(req.body?.speedKph, { field: 'speedKph', min: 0 })
   const heading = parseNumber(req.body?.heading, { field: 'heading', min: 0, max: 360 })
   const accuracyM = parseNumber(req.body?.accuracyM, { field: 'accuracyM', min: 0 })
@@ -86,9 +89,9 @@ export const getLatestBusLocation = asyncHandler(async (req, res) => {
 
 export const getBusLocationHistory = asyncHandler(async (req, res) => {
   const busId = parseObjectId(req.params.id)
-  const since = parseDate(req.query?.since, { field: 'since' })
-  const until = parseDate(req.query?.until, { field: 'until' })
-  if (since && until && since > until) throw createError(422, 'since must be before until')
+  const since = parseDateTimeQuery(req.query?.since, { field: 'since' })
+  const until = parseDateTimeQuery(req.query?.until, { field: 'until' })
+  ensureStartBeforeEnd(since, until, 'since', 'until')
 
   const rawLimit = parseNumber(req.query?.limit, { field: 'limit' })
   const limit = rawLimit === undefined ? 500 : rawLimit

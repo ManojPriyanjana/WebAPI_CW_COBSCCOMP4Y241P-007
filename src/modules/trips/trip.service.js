@@ -3,6 +3,11 @@ import createError from 'http-errors'
 import Trip from './trip.model.js'
 import Route from '../routes/routes.model.js'
 import Bus from '../buses/bus.model.js'
+import {
+  getServiceDateRange,
+  isServiceDateString,
+  parseDateTimeInput,
+} from '../../utils/datetime.js'
 
 function parseObjectId(value, fieldName) {
   if (!value) throw createError(422, `${fieldName} is required`)
@@ -12,10 +17,12 @@ function parseObjectId(value, fieldName) {
   return value
 }
 
-function parseDate(value, fieldName) {
-  if (!value) throw createError(422, `${fieldName} is required`)
-  const date = new Date(value)
-  if (isNaN(date)) throw createError(422, `${fieldName} must be a valid ISO date`)
+function parseDateTime(value, fieldName) {
+  if (value === undefined || value === null || value === '') {
+    throw createError(422, `${fieldName} is required`)
+  }
+  const date = parseDateTimeInput(String(value), fieldName)
+  if (!date) throw createError(422, `${fieldName} must be a valid date/time`)
   return date
 }
 
@@ -63,16 +70,13 @@ export async function list({ page, limit, sort, filters }) {
     query.routeId = filters.routeId
   if (filters?.busId && mongoose.Types.ObjectId.isValid(filters.busId)) query.busId = filters.busId
   if (filters?.serviceDate) {
-    // match same calendar date (UTC)
-    const date = new Date(filters.serviceDate)
-    if (!isNaN(date)) {
-      const start = new Date(
-        Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 0, 0, 0)
-      )
-      const end = new Date(
-        Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 23, 59, 59, 999)
-      )
+    const raw = String(filters.serviceDate).trim()
+    if (isServiceDateString(raw)) {
+      const { start, end } = getServiceDateRange(raw, 'filter[serviceDate]')
       query.serviceDate = { $gte: start, $lte: end }
+    } else {
+      const instant = parseDateTimeInput(raw, 'filter[serviceDate]')
+      query.serviceDate = { $gte: instant, $lte: instant }
     }
   }
 
@@ -101,9 +105,9 @@ export async function create(data, user) {
   ensureDbConnected()
   const routeId = parseObjectId(data.routeId, 'routeId')
   const busId = parseObjectId(data.busId, 'busId')
-  const serviceDate = parseDate(data.serviceDate, 'serviceDate')
-  const schedDepart = parseDate(data.schedDepart, 'schedDepart')
-  const schedArrive = parseDate(data.schedArrive, 'schedArrive')
+  const serviceDate = parseDateTime(data.serviceDate, 'serviceDate')
+  const schedDepart = parseDateTime(data.schedDepart, 'schedDepart')
+  const schedArrive = parseDateTime(data.schedArrive, 'schedArrive')
   if (schedArrive <= schedDepart) throw createError(422, 'schedArrive must be after schedDepart')
   const status = parseStatus(data.status) ?? 'SCHEDULED'
   const ownerId = user?.role === 'operator' ? user.id : data.ownerId ? parseObjectId(data.ownerId, 'ownerId') : undefined
@@ -148,11 +152,11 @@ export async function update(id, changes, user) {
   let effectiveArrive = existing.schedArrive
 
   if (changes.schedDepart !== undefined) {
-    effectiveDepart = parseDate(changes.schedDepart, 'schedDepart')
+    effectiveDepart = parseDateTime(changes.schedDepart, 'schedDepart')
     updateDoc.schedDepart = effectiveDepart
   }
   if (changes.schedArrive !== undefined) {
-    effectiveArrive = parseDate(changes.schedArrive, 'schedArrive')
+    effectiveArrive = parseDateTime(changes.schedArrive, 'schedArrive')
     updateDoc.schedArrive = effectiveArrive
   }
   if (updateDoc.schedDepart || updateDoc.schedArrive) {
@@ -164,7 +168,7 @@ export async function update(id, changes, user) {
   }
 
   if (changes.serviceDate !== undefined) {
-    updateDoc.serviceDate = parseDate(changes.serviceDate, 'serviceDate')
+    updateDoc.serviceDate = parseDateTime(changes.serviceDate, 'serviceDate')
   }
 
   if (changes.status !== undefined) {

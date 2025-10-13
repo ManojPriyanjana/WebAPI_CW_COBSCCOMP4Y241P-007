@@ -89,8 +89,8 @@ describe('Bus location endpoints', () => {
     expect(historyRes.body.data.length).toBeLessThanOrEqual(2)
     expect(historyRes.body.data.every((p) => p.lat >= 6.5 && p.lat <= 7.5)).toBe(true)
     expect(historyRes.body.meta.limit).toBe(2)
-    expect(historyRes.body.meta.since).toBeDefined()
-    expect(historyRes.body.meta.until).toBeDefined()
+  expect(historyRes.body.meta.since).toMatch(/Z$/)
+  expect(historyRes.body.meta.until).toMatch(/Z$/)
     expect(historyRes.headers.etag).toBeDefined()
   })
 
