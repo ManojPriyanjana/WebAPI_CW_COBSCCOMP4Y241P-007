@@ -51,6 +51,9 @@ describe('Collection ETag behaviour', () => {
     const first = await request(base()).get('/api/v1/routes')
     expect(first.status).toBe(200)
     expect(first.headers.etag).toMatch(/^W\/"\d+-\d+"$/)
+    expect(first.headers['cache-control']).toBe('public, max-age=300')
+    expect(first.headers['ratelimit-limit']).toBeDefined()
+    expect(first.headers['ratelimit-remaining']).toBeDefined()
 
     const cached = await request(base())
       .get('/api/v1/routes')
@@ -79,6 +82,8 @@ describe('Collection ETag behaviour', () => {
     const first = await request(base()).get('/api/v1/stops')
     expect(first.status).toBe(200)
     expect(first.headers.etag).toMatch(/^W\/"\d+-\d+"$/)
+    expect(first.headers['cache-control']).toBe('public, max-age=300')
+    expect(first.headers['ratelimit-limit']).toBeDefined()
 
     const cached = await request(base())
       .get('/api/v1/stops')

@@ -19,6 +19,7 @@ export async function getRoutes(req, res, next) {
     const etag = buildCollectionEtag(result.total, result.lastUpdatedAt)
     if (etag) res.setHeader('ETag', etag)
     if (result.lastUpdatedAt) res.setHeader('Last-Modified', new Date(result.lastUpdatedAt).toUTCString())
+    res.setHeader('Cache-Control', 'public, max-age=300')
 
     if (etag && req.headers['if-none-match'] === etag) {
       return res.status(304).end()

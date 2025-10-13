@@ -78,12 +78,14 @@ export const postBusLocation = asyncHandler(async (req, res) => {
     accuracyM,
   })
 
+  res.setHeader('Cache-Control', 'no-store')
   res.status(201).json({ data: result })
 })
 
 export const getLatestBusLocation = asyncHandler(async (req, res) => {
   const busId = parseObjectId(req.params.id)
   const latest = await service.getLatest(busId)
+  res.setHeader('Cache-Control', 'no-store')
   res.json({ data: latest })
 })
 
@@ -100,5 +102,6 @@ export const getBusLocationHistory = asyncHandler(async (req, res) => {
   const bbox = parseBBox(req.query?.bbox)
 
   const data = await service.getHistory(busId, { since, until, limit, bbox })
+  res.setHeader('Cache-Control', 'no-store')
   res.json({ data, meta: serializeMeta({ since, until, limit, bbox }) })
 })

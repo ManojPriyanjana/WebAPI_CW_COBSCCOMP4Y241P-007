@@ -1,5 +1,4 @@
 import { Router } from 'express'
-import rateLimit from 'express-rate-limit'
 import { getBuses, getBusById, createBus, updateBus, deleteBus } from './bus.controller.js'
 import { verifyJWT, requireRole } from '../../middleware/auth.js'
 import {
@@ -7,15 +6,9 @@ import {
 	getLatestBusLocation,
 	getBusLocationHistory,
 } from '../locations/location.controller.js'
+import { locationWriteLimiter } from '../../middleware/rateLimits.js'
 
 const router = Router()
-
-const locationWriteLimiter = rateLimit({
-	windowMs: 60 * 1000,
-	max: 60,
-	standardHeaders: true,
-	legacyHeaders: false,
-})
 
 router.get('/', getBuses)
 router.post('/:id/locations', verifyJWT, requireRole('operator'), locationWriteLimiter, postBusLocation)

@@ -13,11 +13,36 @@ import { notFound, errorHandler } from './middleware/errors.js'
 
 const app = express()
 
+const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || '')
+	.split(',')
+	.map((o) => o.trim())
+	.filter(Boolean)
+
+const exposedCacheHeaders = ['ETag', 'Last-Modified', 'Cache-Control', 'RateLimit-Limit', 'RateLimit-Remaining', 'RateLimit-Reset']
+const exposedRateHeaders = ['RateLimit-Limit', 'RateLimit-Remaining', 'RateLimit-Reset']
+
+const corsOptionsDelegate = (req, callback) => {
+	if (req.method === 'GET' || req.method === 'HEAD') {
+		callback(null, {
+			origin: true,
+			methods: ['GET', 'HEAD', 'OPTIONS'],
+			exposedHeaders: exposedCacheHeaders,
+		})
+		return
+	}
+
+	callback(null, {
+		origin: allowedOrigins.length ? allowedOrigins : false,
+		methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+		exposedHeaders: exposedRateHeaders,
+	})
+}
+
 // Security headers
 app.use(helmet())
 
 // CORS
-app.use(cors())
+app.use(cors(corsOptionsDelegate))
 
 // JSON body parsing
 app.use(express.json())

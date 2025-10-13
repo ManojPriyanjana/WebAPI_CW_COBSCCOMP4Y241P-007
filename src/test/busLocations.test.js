@@ -29,8 +29,8 @@ async function createBusDoc() {
 
 describe('Bus location endpoints', () => {
   test('operator can create locations and latest endpoint returns newest point with caching headers', async () => {
-  const operatorToken = await getOperatorToken()
-  const busId = await createBusDoc()
+    const operatorToken = await getOperatorToken()
+    const busId = await createBusDoc()
 
     const unauth = await request(base()).post(`/api/v1/buses/${busId}/locations`).send({ lat: 6.9, lon: 79.9 })
     expect(unauth.status).toBe(401)
@@ -50,6 +50,7 @@ describe('Bus location endpoints', () => {
     expect(latestRes.body.data.lon).toBeCloseTo(79.8543)
     expect(latestRes.headers.etag).toBeDefined()
     expect(latestRes.headers['last-modified']).toBeDefined()
+    expect(latestRes.headers['cache-control']).toBe('no-store')
 
     const cached = await request(base())
       .get(`/api/v1/buses/${busId}/locations/latest`)
@@ -58,8 +59,8 @@ describe('Bus location endpoints', () => {
   })
 
   test('history endpoint supports time, bbox, and limit filters', async () => {
-  const operatorToken = await getOperatorToken()
-  const busId = await createBusDoc()
+    const operatorToken = await getOperatorToken()
+    const busId = await createBusDoc()
     const now = Date.now()
 
     const payloads = [
@@ -92,11 +93,12 @@ describe('Bus location endpoints', () => {
   expect(historyRes.body.meta.since).toMatch(/Z$/)
   expect(historyRes.body.meta.until).toMatch(/Z$/)
     expect(historyRes.headers.etag).toBeDefined()
+    expect(historyRes.headers['cache-control']).toBe('no-store')
   })
 
   test('validation errors return 422 and unknown bus returns 404', async () => {
-  const operatorToken = await getOperatorToken()
-  const busId = await createBusDoc()
+    const operatorToken = await getOperatorToken()
+    const busId = await createBusDoc()
 
     const invalid = await request(base())
       .post(`/api/v1/buses/${busId}/locations`)
@@ -107,5 +109,31 @@ describe('Bus location endpoints', () => {
     const fakeId = new mongoose.Types.ObjectId().toString()
     const notFound = await request(base()).get(`/api/v1/buses/${fakeId}/locations/latest`)
     expect(notFound.status).toBe(404)
+  })
+})
+
+describe('Location rate limiting', () => {
+  test('write endpoint enforces tighter rate limits', async () => {
+    const operatorToken = await getOperatorToken()
+    const busId = await createBusDoc()
+
+    for (let i = 0; i < 5; i += 1) {
+      const res = await request(base())
+        .post(`/api/v1/buses/${busId}/locations`)
+        .set('Authorization', `Bearer ${operatorToken}`)
+        .send({ lat: 6.9 + i * 0.001, lon: 79.8 + i * 0.001 })
+      expect(res.status).toBe(201)
+      expect(res.headers['ratelimit-limit']).toBeDefined()
+    }
+
+    const limited = await request(base())
+      .post(`/api/v1/buses/${busId}/locations`)
+      .set('Authorization', `Bearer ${operatorToken}`)
+      .send({ lat: 6.95, lon: 79.85 })
+
+    expect(limited.status).toBe(429)
+    expect(limited.body.error.message).toMatch(/Too many location updates/i)
+    expect(limited.headers['ratelimit-limit']).toBeDefined()
+    expect(limited.headers['ratelimit-remaining']).toBeDefined()
   })
 })

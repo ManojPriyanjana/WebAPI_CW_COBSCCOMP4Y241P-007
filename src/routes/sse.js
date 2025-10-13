@@ -8,7 +8,7 @@ router.get('/stream/positions', async (req, res, next) => {
   try {
     // Ensure headers for SSE
     res.setHeader('Content-Type', 'text/event-stream')
-    res.setHeader('Cache-Control', 'no-cache, no-transform')
+  res.setHeader('Cache-Control', 'no-store, no-transform')
     res.setHeader('Connection', 'keep-alive')
     res.flushHeaders?.()
 
