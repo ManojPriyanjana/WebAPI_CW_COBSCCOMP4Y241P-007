@@ -9,6 +9,8 @@ info:
     caching, rate limiting, and resource models for routes, buses, trips, alerts,
     and live bus location updates.
 servers:
+      security:
+        - bearerAuth: []
   - url: http://localhost:3000
     description: Local development server
   - url: https://api.example.com
@@ -18,6 +20,18 @@ security:
 tags:
   - name: Health
     description: Service health probes
+        '401':
+          description: Missing or invalid bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Operator attempted to delete a bus owned by another operator
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   - name: Auth
     description: Authentication and token lifecycle
   - name: Routes
@@ -32,6 +46,8 @@ tags:
     description: Live updates delivered via Server-Sent Events
   - name: Stops
     description: Static lookup data for bus stops and interchange points
+  - name: Users
+    description: Administrative user management
 components:
   securitySchemes:
     bearerAuth:
@@ -169,8 +185,9 @@ components:
           type: number
           format: float
           example: 180
-        ownerId:
+        operatorId:
           type: string
+          description: Operator account responsible for the bus
           description: Owning operator's user id (for RBAC checks)
         createdAt:
           type: string
@@ -342,27 +359,23 @@ components:
       properties:
         id:
           type: string
-        title:
-          type: string
-        body:
-          type: string
-        type:
-          type: string
-          description: Audience or channel type (e.g. system, route-specific)
         severity:
           type: string
           enum: [info, warning, critical]
-        routes:
-          type: array
-          items:
-            type: string
-          description: Route ids impacted by the alert
-        startAt:
+        message:
+          type: string
+        validFrom:
           type: string
           format: date-time
-        endAt:
+        validTo:
           type: string
           format: date-time
+        routeId:
+          type: string
+        tripId:
+          type: string
+        operatorId:
+          type: string
         createdAt:
           type: string
           format: date-time
@@ -371,9 +384,10 @@ components:
           format: date-time
       required:
         - id
-        - title
-        - body
+        - message
         - severity
+        - validFrom
+        - validTo
     PaginatedAlertList:
       type: object
       properties:
@@ -512,7 +526,10 @@ paths:
   /auth/register:
     post:
       tags: [Auth]
-      summary: Register the initial admin or a commuter user
+      summary: Register a commuter account
+      description: |-
+        Creates a commuter user account. All self-service registrations receive the `commuter` role. Operators
+        and admins must be promoted by an administrator using the role management endpoint.
       operationId: registerUser
       security: []
       requestBody:
@@ -529,9 +546,6 @@ paths:
                 password:
                   type: string
                   minLength: 8
-                role:
-                  type: string
-                  description: Optional role assignment (admin only)
       responses:
         '201':
           description: User registered successfully
@@ -540,12 +554,18 @@ paths:
               schema:
                 type: object
                 properties:
-                  id:
-                    type: string
-                  email:
-                    type: string
-                  role:
-                    type: string
+                  data:
+                    type: object
+                    properties:
+                      _id:
+                        type: string
+                      email:
+                        type: string
+                        format: email
+                      role:
+                        type: string
+                        enum: [commuter]
+                    required: [_id, email, role]
         '409':
           description: Email already registered
           content:
@@ -898,6 +918,84 @@ paths:
     get:
       tags: [Routes]
       summary: Retrieve a route by its short code
+  /api/v1/users/{id}/role:
+    patch:
+      tags: [Users]
+      summary: Update a user's role
+      operationId: updateUserRole
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role:
+                  type: string
+                  enum: [admin, operator, commuter]
+      responses:
+        '200':
+          description: Role updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      _id:
+                        type: string
+                      email:
+                        type: string
+                        format: email
+                      role:
+                        type: string
+                        enum: [admin, operator, commuter]
+                      operatorId:
+                        type: string
+                        nullable: true
+                      createdAt:
+                        type: string
+                        format: date-time
+                      updatedAt:
+                        type: string
+                        format: date-time
+                    required: [_id, email, role]
+                required: [data]
+        '401':
+          description: Missing or invalid bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden for non-admin users
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Invalid role payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
       operationId: getRouteByCode
       parameters:
         - name: code
@@ -1053,6 +1151,8 @@ paths:
       tags: [Buses]
       summary: Register a new bus
       operationId: createBus
+      security:
+        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -1067,8 +1167,9 @@ paths:
                   type: string
                 capacity:
                   type: integer
-                ownerId:
+                operatorId:
                   type: string
+                  description: Optional when assigned by an administrator
       responses:
         '201':
           description: Bus created
@@ -1084,6 +1185,18 @@ paths:
                 $ref: '#/components/schemas/Error'
         '409':
           description: Duplicate registration number
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Operator attempted to create a bus for another operator
           content:
             application/json:
               schema:
@@ -1130,6 +1243,8 @@ paths:
           required: true
           schema:
             type: string
+      security:
+        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -1143,8 +1258,9 @@ paths:
                   type: integer
                 status:
                   type: string
-                ownerId:
+                operatorId:
                   type: string
+                  description: Admin-only ownership reassignment
       responses:
         '200':
           description: Bus updated
@@ -1164,6 +1280,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Operator attempted to mutate a bus owned by another operator
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     delete:
       tags: [Buses]
       summary: Delete a bus
@@ -1174,11 +1302,25 @@ paths:
           required: true
           schema:
             type: string
+      security:
+        - bearerAuth: []
       responses:
         '204':
-          description: Bus removed
+          description: Bus deleted
         '404':
           description: Bus not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Operator attempted to delete a bus owned by another operator
           content:
             application/json:
               schema:
@@ -1194,6 +1336,8 @@ paths:
           required: true
           schema:
             type: string
+      security:
+        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -1238,6 +1382,18 @@ paths:
                 $ref: '#/components/schemas/Error'
         '404':
           description: Bus not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Operator attempted to submit telemetry for a bus owned by another operator
           content:
             application/json:
               schema:
@@ -1577,6 +1733,67 @@ paths:
       tags: [Alerts]
       summary: Publish a new alert
       operationId: createAlert
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [severity, message, validFrom, validTo]
+              properties:
+                severity:
+                  type: string
+                  enum: [info, warning, critical]
+                message:
+                  type: string
+                validFrom:
+                  type: string
+                  format: date-time
+                validTo:
+                  type: string
+                  format: date-time
+                routeId:
+                  type: string
+                tripId:
+                  type: string
+                operatorId:
+                  type: string
+                  description: Admin-only ownership assignment
+      responses:
+        '201':
+          description: Alert created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Alert'
+                required: [data]
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Operator attempted to create an alert for another operator
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      tags: [Alerts]
+      summary: Publish a new alert
+      operationId: createAlert
       requestBody:
         required: true
         content:
@@ -1659,7 +1876,11 @@ paths:
           required: true
           schema:
             type: string
-      requestBody:
+                          type: object
+                          properties:
+                            data:
+                              $ref: '#/components/schemas/Alert'
+                          required: [data]
         required: true
         content:
           application/json:
@@ -1676,6 +1897,8 @@ paths:
                 type:
                   type: string
                 routes:
+                security:
+                  - bearerAuth: []
                   type: array
                   items:
                     type: string
@@ -1683,32 +1906,34 @@ paths:
                   type: string
                   format: date-time
                 endAt:
-                  type: string
-                  format: date-time
-      responses:
-        '200':
           description: Alert updated
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/Alert'
-        '404':
-          description: Alert not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-    delete:
-      tags: [Alerts]
-      summary: Delete an alert
-      operationId: deleteAlert
+                          message:
+                            type: string
+                          validFrom:
+                            type: string
+                            format: date-time
+                          validTo:
+                            type: string
+                            format: date-time
+                          routeId:
+                            type: string
+                          tripId:
+                            type: string
+                          operatorId:
+                            type: string
       parameters:
         - name: id
           in: path
           required: true
           schema:
             type: string
-      responses:
+                          type: object
+                          properties:
+                            data:
+                              $ref: '#/components/schemas/Alert'
+                          required: [data]
         '204':
           description: Alert deleted
         '404':
@@ -1721,6 +1946,18 @@ paths:
     get:
       tags: [Streaming]
       summary: Subscribe to live bus positions via Server-Sent Events
+                  '401':
+                    description: Missing or invalid bearer token
+                    content:
+                      application/json:
+                        schema:
+                          $ref: '#/components/schemas/Error'
+                  '403':
+                    description: Operator attempted to update an alert owned by another operator
+                    content:
+                      application/json:
+                        schema:
+                          $ref: '#/components/schemas/Error'
       operationId: streamPositions
       description: |-
         Opens a long-lived HTTP connection that emits `text/event-stream` messages whenever new bus
@@ -1731,6 +1968,8 @@ paths:
           required: false
           description: Continue from a specific event id (client managed)
           schema:
+                security:
+                  - bearerAuth: []
             type: string
       security: []
       responses:
@@ -1740,6 +1979,18 @@ paths:
             text/event-stream:
               schema:
                 type: string
+                  '401':
+                    description: Missing or invalid bearer token
+                    content:
+                      application/json:
+                        schema:
+                          $ref: '#/components/schemas/Error'
+                  '403':
+                    description: Operator attempted to delete an alert owned by another operator
+                    content:
+                      application/json:
+                        schema:
+                          $ref: '#/components/schemas/Error'
                 description: Server-Sent Events payload (data lines containing `LocationUpdate` JSON)
         '503':
           description: Stream unavailable (e.g. MongoDB disconnected)

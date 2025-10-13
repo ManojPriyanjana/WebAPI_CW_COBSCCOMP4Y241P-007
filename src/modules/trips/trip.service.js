@@ -69,9 +69,9 @@ async function ensureRoute(routeId) {
 }
 
 async function ensureBus(busId, user) {
-  const bus = await Bus.findById(busId).select('_id ownerId').lean().exec()
+  const bus = await Bus.findById(busId).select('_id operatorId').lean().exec()
   if (!bus) throw createError(404, 'Bus not found')
-  if (user?.role === 'operator' && bus.ownerId && bus.ownerId.toString() !== user.id) {
+  if (user?.role === 'operator' && bus.operatorId && bus.operatorId.toString() !== user.id) {
     throw createError(403, 'forbidden')
   }
   return bus

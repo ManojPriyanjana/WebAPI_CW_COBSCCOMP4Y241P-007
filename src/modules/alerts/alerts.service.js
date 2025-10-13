@@ -2,6 +2,24 @@ import createError from 'http-errors'
 import Alert from './alerts.model.js'
 import mongoose from 'mongoose'
 
+function ensureActor(actor) {
+  if (!actor) throw createError(401, 'unauthorized')
+}
+
+function ensureOperatorOwned(actor, alert) {
+  if (!actor) throw createError(401, 'unauthorized')
+  if (actor.role === 'admin') return
+  if (actor.role === 'operator' && alert?.operatorId && alert.operatorId.toString() === actor.id) return
+  throw createError(403, 'forbidden')
+}
+
+function resolveOperatorId({ actor, operatorId }) {
+  if (actor?.role === 'operator') return actor.id
+  if (!operatorId) return undefined
+  if (!mongoose.Types.ObjectId.isValid(operatorId)) throw createError(422, 'invalid operatorId')
+  return operatorId
+}
+
 export async function list({ routeId, tripId, severity }) {
   const now = new Date()
   const query = { validFrom: { $lte: now }, validTo: { $gte: now } }
@@ -29,7 +47,8 @@ export async function getById(id) {
   return alert
 }
 
-export async function create(payload) {
+export async function create(payload, actor) {
+  ensureActor(actor)
   const { severity, message, validFrom, validTo, routeId, tripId } = payload || {}
   if (!severity || !message || !validFrom || !validTo)
     throw createError(422, 'missing required fields')
@@ -41,6 +60,7 @@ export async function create(payload) {
   const from = new Date(validFrom)
   const to = new Date(validTo)
   if (isNaN(from) || isNaN(to) || from > to) throw createError(422, 'invalid validity range')
+  const operatorId = resolveOperatorId({ actor, operatorId: payload?.operatorId })
   const doc = await Alert.create({
     severity,
     message,
@@ -48,12 +68,17 @@ export async function create(payload) {
     validTo: to,
     routeId,
     tripId,
+    operatorId,
   })
   return doc.toObject()
 }
 
-export async function update(id, payload) {
+export async function update(id, payload, actor) {
   if (!mongoose.Types.ObjectId.isValid(id)) throw createError(404, 'alert not found')
+  ensureActor(actor)
+  const existing = await Alert.findById(id)
+  if (!existing) throw createError(404, 'alert not found')
+  ensureOperatorOwned(actor, existing)
   const updates = {}
   const allowed = ['info', 'warning', 'critical']
   if ('severity' in payload) {
@@ -81,6 +106,10 @@ export async function update(id, payload) {
       throw createError(422, 'invalid tripId')
     updates.tripId = payload.tripId || undefined
   }
+  if ('operatorId' in payload) {
+    const operatorId = resolveOperatorId({ actor, operatorId: payload.operatorId })
+    updates.operatorId = operatorId
+  }
   if (updates.validFrom && updates.validTo && updates.validFrom > updates.validTo)
     throw createError(422, 'invalid validity range')
   const alert = await Alert.findByIdAndUpdate(id, updates, { new: true }).lean()
@@ -88,9 +117,12 @@ export async function update(id, payload) {
   return alert
 }
 
-export async function remove(id) {
+export async function remove(id, actor) {
   if (!mongoose.Types.ObjectId.isValid(id)) throw createError(404, 'alert not found')
-  const res = await Alert.findByIdAndDelete(id).lean()
-  if (!res) throw createError(404, 'alert not found')
+  ensureActor(actor)
+  const existing = await Alert.findById(id)
+  if (!existing) throw createError(404, 'alert not found')
+  ensureOperatorOwned(actor, existing)
+  await Alert.deleteOne({ _id: id })
   return { success: true }
 }

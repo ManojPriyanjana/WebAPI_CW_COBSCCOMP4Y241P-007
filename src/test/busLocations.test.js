@@ -8,23 +8,47 @@ const base = () => process.env.TEST_BASE_URL
 
 const PASSWORD = 'Passw0rd!'
 
-let cachedOperatorToken
+let cachedOperator
+
+async function ensureOperatorAccount() {
+  if (cachedOperator) {
+    const stillExists = await User.exists({ _id: cachedOperator.id })
+    if (stillExists) return cachedOperator
+  }
+
+  const email = `operator-${Date.now()}-${Math.random().toString(16).slice(2, 8)}@test.com`
+  const passwordHash = await argon2.hash(PASSWORD)
+  const user = await User.create({ email, passwordHash, role: 'operator' })
+  cachedOperator = { email, id: user._id.toString() }
+  return cachedOperator
+}
 
 async function getOperatorToken() {
-  if (cachedOperatorToken) return cachedOperatorToken
-  const email = `operator-${Date.now()}@test.com`
-  const passwordHash = await argon2.hash(PASSWORD)
-  await User.create({ email, passwordHash, role: 'operator' })
+  const { email } = await ensureOperatorAccount()
   const loginRes = await request(base()).post('/auth/login').send({ email, password: PASSWORD })
   expect(loginRes.status).toBe(200)
-  cachedOperatorToken = loginRes.body.accessToken
-  return cachedOperatorToken
+  return loginRes.body.accessToken
+}
+
+async function getOperatorId() {
+  const { id } = await ensureOperatorAccount()
+  return id
 }
 
 async function createBusDoc() {
   const regNo = `BUS-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`
-  const bus = await Bus.create({ regNo, operator: 'Test Operator', capacity: 40 })
+  const operatorId = await getOperatorId()
+  const bus = await Bus.create({ regNo, operator: 'Test Operator', capacity: 40, operatorId })
   return bus._id.toString()
+}
+
+async function createForeignOperatorToken() {
+  const email = `other-operator-${Date.now()}@test.com`
+  const passwordHash = await argon2.hash(PASSWORD)
+  await User.create({ email, passwordHash, role: 'operator' })
+  const login = await request(base()).post('/auth/login').send({ email, password: PASSWORD })
+  expect(login.status).toBe(200)
+  return login.body.accessToken
 }
 
 describe('Bus location endpoints', () => {
@@ -109,6 +133,19 @@ describe('Bus location endpoints', () => {
     const fakeId = new mongoose.Types.ObjectId().toString()
     const notFound = await request(base()).get(`/api/v1/buses/${fakeId}/locations/latest`)
     expect(notFound.status).toBe(404)
+  })
+
+  test('operators cannot mutate locations for buses owned by other operators', async () => {
+    const operatorToken = await getOperatorToken()
+    const busId = await createBusDoc()
+    const otherOperatorToken = await createForeignOperatorToken()
+
+    const forbidden = await request(base())
+      .post(`/api/v1/buses/${busId}/locations`)
+      .set('Authorization', `Bearer ${otherOperatorToken}`)
+      .send({ lat: 6.9, lon: 79.9 })
+
+    expect(forbidden.status).toBe(403)
   })
 })
 

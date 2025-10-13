@@ -5,6 +5,7 @@ import tripsRouter from '../modules/trips/trip.router.js'
 import alertsRouter from '../modules/alerts/alerts.router.js'
 import stopsRouter from '../modules/stops/stop.router.js'
 import departuresRouter from '../modules/departures/departures.router.js'
+import usersRouter from '../modules/users/users.router.js'
 import { publicReadLimiter } from '../middleware/rateLimits.js'
 
 const api = Router()
@@ -22,5 +23,7 @@ api.use('/departures', departuresRouter)
 api.use('/buses', busesRouter)
 api.use('/trips', tripsRouter)
 api.use('/alerts', alertsRouter)
+api.use('/users', usersRouter)
+api.use('/users', usersRouter)
 
 export default api

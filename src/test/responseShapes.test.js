@@ -1,6 +1,7 @@
 import request from 'supertest'
 
 import Alert from '../modules/alerts/alerts.model.js'
+import User from '../modules/users/users.model.js'
 
 const base = () => process.env.TEST_BASE_URL
 const PASSWORD = 'Passw0rd!'
@@ -11,8 +12,9 @@ beforeAll(async () => {
   const email = `admin-${Date.now()}@test.com`
   const register = await request(base())
     .post('/auth/register')
-    .send({ email, password: PASSWORD, role: 'admin' })
+    .send({ email, password: PASSWORD })
   expect(register.status).toBe(201)
+  await User.updateOne({ email }, { $set: { role: 'admin' } }).exec()
   const login = await request(base()).post('/auth/login').send({ email, password: PASSWORD })
   expect(login.status).toBe(200)
   adminToken = login.body.accessToken

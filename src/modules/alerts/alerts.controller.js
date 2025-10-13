@@ -20,18 +20,18 @@ export const getAlert = asyncHandler(async (req, res) => {
 })
 
 export const createAlert = asyncHandler(async (req, res) => {
-  const data = await svc.create(req.body || {})
+  const data = await svc.create(req.body || {}, req.user)
   res.status(201).json({ data })
 })
 
 export const updateAlert = asyncHandler(async (req, res) => {
   const { id } = req.params
-  const data = await svc.update(id, req.body || {})
+  const data = await svc.update(id, req.body || {}, req.user)
   res.json({ data })
 })
 
 export const deleteAlert = asyncHandler(async (req, res) => {
   const { id } = req.params
-  const data = await svc.remove(id)
+  const data = await svc.remove(id, req.user)
   res.json(data)
 })

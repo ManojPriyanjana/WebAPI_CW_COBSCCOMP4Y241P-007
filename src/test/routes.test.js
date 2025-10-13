@@ -1,5 +1,6 @@
 import request from 'supertest'
 import Route from '../modules/routes/routes.model.js'
+import User from '../modules/users/users.model.js'
 
 const base = () => process.env.TEST_BASE_URL
 
@@ -9,6 +10,7 @@ async function createAdminToken() {
   const email = `admin-${Date.now()}@test.com`
   const register = await request(base()).post('/auth/register').send({ email, password: PASSWORD })
   expect(register.status).toBe(201)
+  await User.updateOne({ email }, { $set: { role: 'admin' } }).exec()
   const login = await request(base()).post('/auth/login').send({ email, password: PASSWORD })
   expect(login.status).toBe(200)
   return login.body.accessToken
@@ -18,8 +20,9 @@ async function createOperatorToken() {
   const email = `operator-${Date.now()}@test.com`
   const register = await request(base())
     .post('/auth/register')
-    .send({ email, password: PASSWORD, role: 'operator' })
+    .send({ email, password: PASSWORD })
   expect(register.status).toBe(201)
+  await User.updateOne({ email }, { $set: { role: 'operator' } }).exec()
   const login = await request(base()).post('/auth/login').send({ email, password: PASSWORD })
   expect(login.status).toBe(200)
   return login.body.accessToken

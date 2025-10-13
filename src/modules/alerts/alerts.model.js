@@ -6,6 +6,7 @@ const alertSchema = new Schema(
   {
     routeId: { type: Schema.Types.ObjectId, ref: 'Route', required: false },
     tripId: { type: Schema.Types.ObjectId, ref: 'Trip', required: false },
+  operatorId: { type: Schema.Types.ObjectId, ref: 'User', required: false, index: true },
     severity: { type: String, enum: ['info', 'warning', 'critical'], required: true, index: true },
     message: { type: String, required: true },
     validFrom: { type: Date, required: true, index: true },

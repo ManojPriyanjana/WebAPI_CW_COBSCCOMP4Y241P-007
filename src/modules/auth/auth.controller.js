@@ -2,8 +2,8 @@ import { asyncHandler } from '../../middleware/errors.js'
 import * as authService from './auth.service.js'
 
 export const register = asyncHandler(async (req, res) => {
-  const { email, password, role, operatorId } = req.body || {}
-  const user = await authService.register({ email, password, role, operatorId })
+  const { email, password } = req.body || {}
+  const user = await authService.register({ email, password })
   res.status(201).json({ data: user })
 })
 

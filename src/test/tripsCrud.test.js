@@ -1,6 +1,7 @@
 import request from 'supertest'
 import Trip from '../modules/trips/trip.model.js'
 import Stop from '../modules/stops/stop.model.js'
+import User from '../modules/users/users.model.js'
 
 const base = () => process.env.TEST_BASE_URL
 const PASSWORD = 'Passw0rd!'
@@ -9,6 +10,7 @@ async function createAdminToken() {
   const email = `admin-${Date.now()}@test.com`
   const register = await request(base()).post('/auth/register').send({ email, password: PASSWORD })
   expect(register.status).toBe(201)
+  await User.updateOne({ email }, { $set: { role: 'admin' } }).exec()
   const login = await request(base()).post('/auth/login').send({ email, password: PASSWORD })
   expect(login.status).toBe(200)
   return { token: login.body.accessToken, email }
@@ -18,8 +20,9 @@ async function createOperatorToken(label = '') {
   const email = `operator${label}-${Date.now()}@test.com`
   const register = await request(base())
     .post('/auth/register')
-    .send({ email, password: PASSWORD, role: 'operator' })
+    .send({ email, password: PASSWORD })
   expect(register.status).toBe(201)
+  await User.updateOne({ email }, { $set: { role: 'operator' } }).exec()
   const login = await request(base()).post('/auth/login').send({ email, password: PASSWORD })
   expect(login.status).toBe(200)
   return { token: login.body.accessToken, email }

@@ -32,9 +32,19 @@ async function loadBusOrThrow(busId) {
   return bus
 }
 
-export async function recordLocation(busId, { ts, coordinates, speedKph, heading, accuracyM }) {
+function ensureActorCanWrite(bus, actor) {
+  if (!actor) throw createError(401, 'unauthorized')
+  if (actor.role === 'admin') return
+  if (actor.role === 'operator' && bus?.operatorId && bus.operatorId.toString() === actor.id) {
+    return
+  }
+  throw createError(403, 'forbidden')
+}
+
+export async function recordLocation(busId, actor, { ts, coordinates, speedKph, heading, accuracyM }) {
   ensureDbConnected()
-  await loadBusOrThrow(busId)
+  const bus = await loadBusOrThrow(busId)
+  ensureActorCanWrite(bus, actor)
   const payload = {
     busId,
     ts,

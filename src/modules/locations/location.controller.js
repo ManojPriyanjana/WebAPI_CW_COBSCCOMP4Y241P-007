@@ -70,7 +70,7 @@ export const postBusLocation = asyncHandler(async (req, res) => {
   const heading = parseNumber(req.body?.heading, { field: 'heading', min: 0, max: 360 })
   const accuracyM = parseNumber(req.body?.accuracyM, { field: 'accuracyM', min: 0 })
 
-  const result = await service.recordLocation(busId, {
+  const result = await service.recordLocation(busId, req.user, {
     ts,
     coordinates: [lon, lat],
     speedKph,

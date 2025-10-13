@@ -26,10 +26,10 @@ function parseStatus(value) {
   return status
 }
 
-function parseOwnerId(value) {
+function parseOperatorId(value) {
   if (!value) return undefined
   if (!mongoose.Types.ObjectId.isValid(value)) {
-    throw createError(422, 'ownerId must be a valid ObjectId')
+    throw createError(422, 'operatorId must be a valid ObjectId')
   }
   return value
 }
@@ -38,7 +38,7 @@ function ensureCanMutate(user, doc) {
   if (!user) throw createError(401, 'unauthorized')
   if (user.role === 'admin') return true
   if (user.role === 'operator') {
-    if (doc?.ownerId && doc.ownerId.toString() === user.id) return true
+    if (doc?.operatorId && doc.operatorId.toString() === user.id) return true
     throw createError(403, 'forbidden')
   }
   throw createError(403, 'forbidden')
@@ -86,15 +86,15 @@ export async function create(data, user) {
     throw createError(422, 'regNo, operator and capacity are required')
   }
 
-  let ownerId
+  let operatorId
   if (user?.role === 'operator') {
-    ownerId = user.id
-  } else if (data.ownerId) {
-    ownerId = parseOwnerId(data.ownerId)
+    operatorId = user.id
+  } else if (data.operatorId) {
+    operatorId = parseOperatorId(data.operatorId)
   }
 
   try {
-    const bus = await Bus.create({ regNo, operator, capacity, status, ownerId })
+    const bus = await Bus.create({ regNo, operator, capacity, status, operatorId })
     return bus.toObject()
   } catch (err) {
     if (err?.code === 11000) throw createError(409, 'Bus registration already exists')
@@ -123,9 +123,9 @@ export async function update(id, changes, user) {
   if (changes.status !== undefined) {
     updateDoc.status = parseStatus(changes.status)
   }
-  if (changes.ownerId !== undefined) {
+  if (changes.operatorId !== undefined) {
     if (user?.role !== 'admin') throw createError(403, 'forbidden')
-    updateDoc.ownerId = parseOwnerId(changes.ownerId)
+    updateDoc.operatorId = parseOperatorId(changes.operatorId)
   }
 
   if (Object.keys(updateDoc).length === 0) {

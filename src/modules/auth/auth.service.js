@@ -28,17 +28,16 @@ function verifyToken(token) {
   return jwt.verify(token, authConfig.publicKey, { algorithms: ['RS256'] })
 }
 
-export async function register({ email, password, role, operatorId }) {
+export async function register({ email, password }) {
   if (!email || !password) throw createError(400, 'email and password are required')
   const existing = await User.findOne({ email })
   if (existing) throw createError(409, 'email already registered')
 
-  const usersCount = await User.estimatedDocumentCount()
-  const finalRole = usersCount === 0 ? 'admin' : role || 'commuter'
-  if (finalRole && !USER_ROLES.includes(finalRole)) throw createError(400, 'invalid role')
+  const finalRole = 'commuter'
+  if (!USER_ROLES.includes(finalRole)) throw createError(400, 'invalid role')
 
   const passwordHash = await argon2.hash(password)
-  const user = await User.create({ email, passwordHash, role: finalRole, operatorId })
+  const user = await User.create({ email, passwordHash, role: finalRole })
   return { _id: user._id, email: user.email, role: user.role }
 }
 
