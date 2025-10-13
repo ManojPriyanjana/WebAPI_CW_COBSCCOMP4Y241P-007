@@ -22,7 +22,8 @@ jobs:
           npm run build || echo "no build step"
 
       - name: Ship code to EC2 (rsync)
-        uses: burnett01/rsync-deployments@v7
+        uses: burnett01/rsync-deployments@v6
+
         with:
           switches: -avr --delete --exclude=".git" --exclude=".github" --exclude="node_modules"
           path: ./
