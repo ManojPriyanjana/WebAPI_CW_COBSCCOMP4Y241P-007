@@ -30,6 +30,8 @@ tags:
     description: Passenger-facing service alerts
   - name: Streaming
     description: Live updates delivered via Server-Sent Events
+  - name: Stops
+    description: Static lookup data for bus stops and interchange points
 components:
   securitySchemes:
     bearerAuth:
@@ -106,7 +108,7 @@ components:
         format: date-time
   headers:
     ETag:
-      description: Strong ETag representing the response entity. Reuse with `If-None-Match` on subsequent requests.
+      description: Weak ETag representing the response entity. Reuse with `If-None-Match` on subsequent requests.
       schema:
         type: string
     LastModified:
@@ -346,6 +348,57 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Alert'
+        page:
+          type: integer
+        limit:
+          type: integer
+        total:
+          type: integer
+      required:
+        - data
+        - page
+        - limit
+        - total
+    Stop:
+      type: object
+      properties:
+        id:
+          type: string
+          description: MongoDB ObjectId of the stop
+        code:
+          type: string
+          example: ST-001
+        name:
+          type: string
+        description:
+          type: string
+        lat:
+          type: number
+          format: float
+        lon:
+          type: number
+          format: float
+        province:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - code
+        - name
+        - lat
+        - lon
+    PaginatedStopList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Stop'
         page:
           type: integer
         limit:
@@ -663,6 +716,39 @@ paths:
                 $ref: '#/components/schemas/Error'
         '409':
           description: Duplicate route code
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/stops:
+    get:
+      tags: [Stops]
+      summary: List stops with pagination and filtering
+      operationId: listStops
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - $ref: '#/components/parameters/SortParam'
+        - $ref: '#/components/parameters/FilterParam'
+        - $ref: '#/components/parameters/IfNoneMatchHeader'
+        - $ref: '#/components/parameters/IfModifiedSinceHeader'
+      security: []
+      responses:
+        '200':
+          description: Stops returned successfully
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Last-Modified:
+              $ref: '#/components/headers/LastModified'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedStopList'
+        '304':
+          description: Not modified since last request
+        '500':
+          description: Unexpected error
           content:
             application/json:
               schema:

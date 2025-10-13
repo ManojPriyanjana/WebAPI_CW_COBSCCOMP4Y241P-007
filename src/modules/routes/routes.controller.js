@@ -2,6 +2,7 @@ import { parsePagination } from '../common/pagination.js'
 import { asString, pick } from '../common/validate.js'
 import { httpError } from '../../middleware/errors.js'
 import * as service from './routes.service.js'
+import { buildCollectionEtag } from '../../utils/etag.js'
 
 export async function getRoutes(req, res, next) {
   const { page, limit, sort } = parsePagination(req.query)
@@ -15,6 +16,14 @@ export async function getRoutes(req, res, next) {
 
   try {
     const result = await service.findAll({ page, limit, sort, filters })
+    const etag = buildCollectionEtag(result.total, result.lastUpdatedAt)
+    if (etag) res.setHeader('ETag', etag)
+    if (result.lastUpdatedAt) res.setHeader('Last-Modified', new Date(result.lastUpdatedAt).toUTCString())
+
+    if (etag && req.headers['if-none-match'] === etag) {
+      return res.status(304).end()
+    }
+
     return res.json({ data: result.data, page: result.page, limit: result.limit, total: result.total })
   } catch (err) {
     return next(err)

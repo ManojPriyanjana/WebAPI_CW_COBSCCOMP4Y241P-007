@@ -26,6 +26,31 @@ export default function conditionalGet(req, res, next) {
   const originalJson = res.json.bind(res)
   res.json = (data) => {
     try {
+      const precomputedEtag = res.getHeader('ETag')
+      const precomputedLastModified = res.getHeader('Last-Modified')
+
+      if (precomputedEtag || precomputedLastModified) {
+        const inm = req.headers['if-none-match']
+        if (precomputedEtag && inm && inm === precomputedEtag) {
+          res.status(304)
+          return res.end()
+        }
+
+        if (precomputedLastModified) {
+          const ims = req.headers['if-modified-since']
+          if (ims) {
+            const since = new Date(ims)
+            const lastModifiedDate = new Date(precomputedLastModified)
+            if (!isNaN(since) && !isNaN(lastModifiedDate) && lastModifiedDate <= since) {
+              res.status(304)
+              return res.end()
+            }
+          }
+        }
+
+        return originalJson(data)
+      }
+
       const etag = computeETag(data)
       const lastModifiedDate = getLastModifiedFromBody(data?.data ? data.data : data)
 

@@ -43,11 +43,12 @@ export async function findAll({ page, limit, sort, filters }) {
   }
 
   const skip = (page - 1) * limit
-  const [items, total] = await Promise.all([
+  const [items, total, newest] = await Promise.all([
     Route.find(query).sort(sortSpec).skip(skip).limit(limit).lean().exec(),
     Route.countDocuments(query),
+    Route.findOne(query).sort({ updatedAt: -1 }).select({ updatedAt: 1 }).lean().exec(),
   ])
-  return { data: items, page, limit, total }
+  return { data: items, page, limit, total, lastUpdatedAt: newest?.updatedAt }
 }
 
 export async function findById(id) {
