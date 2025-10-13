@@ -582,6 +582,10 @@ paths:
     post:
       tags: [Auth]
       summary: Authenticate with email/password and receive JWTs
+      description: >-
+        Returns a short-lived JWT access token and an opaque refresh token. Refresh
+        tokens are stored hashed in the database and linked to the authenticated
+        user so they can be revoked or audited server-side.
       operationId: login
       security: []
       requestBody:
@@ -635,6 +639,10 @@ paths:
     post:
       tags: [Auth]
       summary: Refresh an expired/expiring access token
+      description: >-
+        Looks up the provided refresh token by its hashed value, verifies it is
+        still active and unexpired, then issues a new access token. No refresh
+        token payload is trusted client-side.
       operationId: refreshToken
       security: []
       requestBody:
@@ -669,6 +677,10 @@ paths:
     post:
       tags: [Auth]
       summary: Revoke a refresh token
+      description: >-
+        Marks the matching hashed refresh token as revoked so it can no longer be
+        used to mint access tokens. Clients should discard their cached refresh
+        token after this call.
       operationId: logout
       security: []
       requestBody:
@@ -1150,6 +1162,9 @@ paths:
     post:
       tags: [Buses]
       summary: Register a new bus
+      description: >-
+        Successful creations are recorded in the admin audit log alongside the
+        acting user and assigned operator to support compliance review.
       operationId: createBus
       security:
         - bearerAuth: []
@@ -1236,6 +1251,9 @@ paths:
     patch:
       tags: [Buses]
       summary: Update a bus
+      description: >-
+        Mutations are written to the admin audit log with the acting user, target
+        bus, and the fields that changed.
       operationId: updateBus
       parameters:
         - name: id
@@ -1295,6 +1313,9 @@ paths:
     delete:
       tags: [Buses]
       summary: Delete a bus
+      description: >-
+        Successful deletions are captured in the admin audit log with actor and
+        target identifiers.
       operationId: deleteBus
       parameters:
         - name: id
@@ -1553,6 +1574,9 @@ paths:
     post:
       tags: [Trips]
       summary: Create a new trip assignment
+      description: >-
+        Successful trip assignments are recorded in the admin audit log including
+        the actor, route, and bus identifiers.
       operationId: createTrip
       requestBody:
         required: true
@@ -1631,6 +1655,9 @@ paths:
     patch:
       tags: [Trips]
       summary: Update a trip schedule or metadata
+      description: >-
+        Field changes are noted in the admin audit log along with the acting user
+        and target trip.
       operationId: updateTrip
       parameters:
         - name: id
@@ -1680,6 +1707,9 @@ paths:
     delete:
       tags: [Trips]
       summary: Delete a trip
+      description: >-
+        Trip deletions are captured in the admin audit log with actor and target
+        identifiers.
       operationId: deleteTrip
       parameters:
         - name: id
@@ -1732,6 +1762,9 @@ paths:
     post:
       tags: [Alerts]
       summary: Publish a new alert
+      description: >-
+        New alerts are recorded in the admin audit log with the actor and any
+        assigned operator, route, or trip references.
       operationId: createAlert
       security:
         - bearerAuth: []
@@ -1869,6 +1902,9 @@ paths:
     patch:
       tags: [Alerts]
       summary: Update an alert
+      description: >-
+        Alert updates are tracked in the admin audit log together with the actor
+        and the fields that changed.
       operationId: updateAlert
       parameters:
         - name: id

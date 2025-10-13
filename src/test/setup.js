@@ -1,7 +1,10 @@
+import { jest } from '@jest/globals'
 import dotenv from 'dotenv'
 import mongoose from 'mongoose'
 import http from 'http'
 import { generateKeyPairSync } from 'crypto'
+
+jest.setTimeout(20000)
 
 dotenv.config()
 

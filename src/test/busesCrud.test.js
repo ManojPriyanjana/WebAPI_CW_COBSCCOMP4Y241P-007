@@ -1,6 +1,7 @@
 import request from 'supertest'
 import Bus from '../modules/buses/bus.model.js'
 import User from '../modules/users/users.model.js'
+import AdminAudit from '../modules/audit/adminAudit.model.js'
 
 const base = () => process.env.TEST_BASE_URL
 const PASSWORD = 'Passw0rd!'
@@ -71,6 +72,15 @@ describe('Bus CRUD with RBAC', () => {
 
     const afterDelete = await request(base()).get(`/api/v1/buses/${busId}`)
     expect(afterDelete.status).toBe(404)
+
+    const auditEntries = await AdminAudit.find({ targetType: 'bus', targetId: busId })
+      .sort({ at: 1 })
+      .lean()
+    const actions = auditEntries.map((entry) => entry.action)
+    expect(actions).toEqual(expect.arrayContaining(['bus.create', 'bus.update', 'bus.delete']))
+    expect(actions.filter((a) => a === 'bus.update').length).toBeGreaterThanOrEqual(1)
+    const createAudit = auditEntries.find((entry) => entry.action === 'bus.create')
+    expect(createAudit?.meta?.regNo).toBe(regNo)
   })
 
   test('operator cannot delete buses without ownership but admin can', async () => {

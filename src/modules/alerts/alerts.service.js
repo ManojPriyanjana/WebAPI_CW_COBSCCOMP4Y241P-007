@@ -1,6 +1,7 @@
 import createError from 'http-errors'
 import Alert from './alerts.model.js'
 import mongoose from 'mongoose'
+import { recordAdminAudit } from '../audit/adminAudit.service.js'
 
 function ensureActor(actor) {
   if (!actor) throw createError(401, 'unauthorized')
@@ -70,6 +71,13 @@ export async function create(payload, actor) {
     tripId,
     operatorId,
   })
+  await recordAdminAudit({
+    actorId: actor?.id,
+    action: 'alert.create',
+    targetType: 'alert',
+    targetId: doc._id,
+    meta: { severity, operatorId, routeId, tripId },
+  })
   return doc.toObject()
 }
 
@@ -114,6 +122,13 @@ export async function update(id, payload, actor) {
     throw createError(422, 'invalid validity range')
   const alert = await Alert.findByIdAndUpdate(id, updates, { new: true }).lean()
   if (!alert) throw createError(404, 'alert not found')
+  await recordAdminAudit({
+    actorId: actor?.id,
+    action: 'alert.update',
+    targetType: 'alert',
+    targetId: alert._id,
+    meta: updates,
+  })
   return alert
 }
 
@@ -124,5 +139,12 @@ export async function remove(id, actor) {
   if (!existing) throw createError(404, 'alert not found')
   ensureOperatorOwned(actor, existing)
   await Alert.deleteOne({ _id: id })
+  await recordAdminAudit({
+    actorId: actor?.id,
+    action: 'alert.delete',
+    targetType: 'alert',
+    targetId: existing._id,
+    meta: { severity: existing.severity, operatorId: existing.operatorId },
+  })
   return { success: true }
 }

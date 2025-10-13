@@ -1,5 +1,7 @@
 import request from 'supertest'
 import User from '../modules/users/users.model.js'
+import RefreshToken from '../modules/auth/refreshToken.model.js'
+import * as authService from '../modules/auth/auth.service.js'
 
 const base = () => process.env.TEST_BASE_URL
 
@@ -41,8 +43,15 @@ test('alerts POST requires admin/operator; succeeds with token', async () => {
   expect(res.body.data.severity).toBe('info')
 })
 
-test('refresh token is rejected after logout', async () => {
-  const tokens = await registerAndLogin('authlogout@test.com')
+test('refresh token is stored hashed and rejected after logout', async () => {
+  const email = 'authlogout@test.com'
+  const tokens = await registerAndLogin(email)
+  const user = await User.findOne({ email }).lean()
+  const storedBeforeLogout = await RefreshToken.findOne({ userId: user._id }).lean()
+  expect(storedBeforeLogout).toBeTruthy()
+  const hashed = authService._internals.hashRefreshToken(tokens.refreshToken)
+  expect(storedBeforeLogout.tokenHash).toBe(hashed)
+  expect(storedBeforeLogout.tokenHash).not.toBe(tokens.refreshToken)
 
   const refreshBeforeLogout = await request(base())
     .post('/auth/refresh')
@@ -54,6 +63,9 @@ test('refresh token is rejected after logout', async () => {
     .send({ refreshToken: tokens.refreshToken })
   expect(logoutRes.status).toBe(200)
   expect(logoutRes.body.success).toBe(true)
+
+  const storedAfterLogout = await RefreshToken.findOne({ tokenHash: hashed }).lean()
+  expect(storedAfterLogout?.revokedAt).not.toBeNull()
 
   const refreshAfterLogout = await request(base())
     .post('/auth/refresh')

@@ -1,6 +1,7 @@
 import mongoose from 'mongoose'
 import createError from 'http-errors'
 import Bus from './bus.model.js'
+import { recordAdminAudit } from '../audit/adminAudit.service.js'
 
 function normalizeString(value) {
   if (value === undefined || value === null) return undefined
@@ -95,6 +96,13 @@ export async function create(data, user) {
 
   try {
     const bus = await Bus.create({ regNo, operator, capacity, status, operatorId })
+    await recordAdminAudit({
+      actorId: user?.id,
+      action: 'bus.create',
+      targetType: 'bus',
+      targetId: bus._id,
+      meta: { regNo: bus.regNo, operatorId: bus.operatorId },
+    })
     return bus.toObject()
   } catch (err) {
     if (err?.code === 11000) throw createError(409, 'Bus registration already exists')
@@ -135,6 +143,15 @@ export async function update(id, changes, user) {
   const updated = await Bus.findByIdAndUpdate(id, { $set: updateDoc }, { new: true, runValidators: true })
     .lean()
     .exec()
+  if (updated) {
+    await recordAdminAudit({
+      actorId: user?.id,
+      action: 'bus.update',
+      targetType: 'bus',
+      targetId: updated._id,
+      meta: updateDoc,
+    })
+  }
   return updated
 }
 
@@ -145,5 +162,12 @@ export async function remove(id, user) {
   if (!existing) return null
   ensureCanMutate(user, existing)
   await Bus.deleteOne({ _id: id })
+  await recordAdminAudit({
+    actorId: user?.id,
+    action: 'bus.delete',
+    targetType: 'bus',
+    targetId: existing._id,
+    meta: { regNo: existing.regNo, operatorId: existing.operatorId },
+  })
   return true
 }

@@ -4,6 +4,7 @@ import Trip from './trip.model.js'
 import Route from '../routes/routes.model.js'
 import Bus from '../buses/bus.model.js'
 import Stop from '../stops/stop.model.js'
+import { recordAdminAudit } from '../audit/adminAudit.service.js'
 import {
   combineServiceDateAndTime,
   ensureStartBeforeEnd,
@@ -155,6 +156,17 @@ export async function create(data, user) {
     status,
     ownerId,
   })
+  await recordAdminAudit({
+    actorId: user?.id,
+    action: 'trip.create',
+    targetType: 'trip',
+    targetId: trip._id,
+    meta: {
+      routeId,
+      busId,
+      ownerId,
+    },
+  })
   return trip.toObject()
 }
 
@@ -231,6 +243,15 @@ export async function update(id, changes, user) {
   const updated = await Trip.findByIdAndUpdate(id, { $set: updateDoc }, { new: true, runValidators: true })
     .lean()
     .exec()
+  if (updated) {
+    await recordAdminAudit({
+      actorId: user?.id,
+      action: 'trip.update',
+      targetType: 'trip',
+      targetId: updated._id,
+      meta: updateDoc,
+    })
+  }
   return updated
 }
 
@@ -241,6 +262,13 @@ export async function remove(id, user) {
   if (!existing) return null
   ensureTripOwner(user, existing)
   await Trip.deleteOne({ _id: id })
+  await recordAdminAudit({
+    actorId: user?.id,
+    action: 'trip.delete',
+    targetType: 'trip',
+    targetId: existing._id,
+    meta: { routeId: existing.routeId, busId: existing.busId, ownerId: existing.ownerId },
+  })
   return true
 }
 

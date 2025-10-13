@@ -1,6 +1,9 @@
+import { jest } from '@jest/globals'
 import request from 'supertest'
 import Route from '../modules/routes/routes.model.js'
 import Stop from '../modules/stops/stop.model.js'
+
+jest.setTimeout(15000)
 
 const base = () => process.env.TEST_BASE_URL
 

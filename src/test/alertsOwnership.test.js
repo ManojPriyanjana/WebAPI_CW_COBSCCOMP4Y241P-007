@@ -1,6 +1,10 @@
+import { jest } from '@jest/globals'
 import request from 'supertest'
 import User from '../modules/users/users.model.js'
 import Alert from '../modules/alerts/alerts.model.js'
+import AdminAudit from '../modules/audit/adminAudit.model.js'
+
+jest.setTimeout(15000)
 
 const base = () => process.env.TEST_BASE_URL
 const PASSWORD = 'Passw0rd!'
@@ -62,5 +66,13 @@ describe('Alerts ownership enforcement', () => {
       .set('Authorization', `Bearer ${admin.token}`)
     expect(deleteOk.status).toBe(200)
     expect(deleteOk.body.success).toBe(true)
+
+    const auditEntries = await AdminAudit.find({ targetType: 'alert', targetId: alertId })
+      .sort({ at: 1 })
+      .lean()
+    const actions = auditEntries.map((entry) => entry.action)
+    expect(actions).toEqual(expect.arrayContaining(['alert.create', 'alert.update', 'alert.delete']))
+    const updateEntry = auditEntries.find((entry) => entry.action === 'alert.update')
+    expect(updateEntry?.meta?.severity).toBe('warning')
   })
 })

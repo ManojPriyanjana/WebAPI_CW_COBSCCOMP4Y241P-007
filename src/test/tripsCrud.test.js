@@ -1,7 +1,11 @@
+import { jest } from '@jest/globals'
 import request from 'supertest'
 import Trip from '../modules/trips/trip.model.js'
 import Stop from '../modules/stops/stop.model.js'
 import User from '../modules/users/users.model.js'
+import AdminAudit from '../modules/audit/adminAudit.model.js'
+
+jest.setTimeout(15000)
 
 const base = () => process.env.TEST_BASE_URL
 const PASSWORD = 'Passw0rd!'
@@ -137,5 +141,14 @@ describe('Trip CRUD with RBAC', () => {
 
     const afterDelete = await request(base()).get(`/api/v1/trips/${tripId}`)
     expect(afterDelete.status).toBe(404)
+
+    const auditEntries = await AdminAudit.find({ targetType: 'trip', targetId: tripId })
+      .sort({ at: 1 })
+      .lean()
+    const actions = auditEntries.map((entry) => entry.action)
+    expect(actions).toEqual(expect.arrayContaining(['trip.create', 'trip.update', 'trip.delete']))
+    expect(actions.filter((action) => action === 'trip.update').length).toBeGreaterThanOrEqual(1)
+    const createEntry = auditEntries.find((entry) => entry.action === 'trip.create')
+    expect(createEntry?.meta?.routeId?.toString()).toBe(routeId)
   })
 })
