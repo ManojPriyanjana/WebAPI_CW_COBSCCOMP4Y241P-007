@@ -1,0 +1,46 @@
+name: Deploy Stage
+
+on:
+  push:
+    branches: [ "Stage" ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (shallow)
+        uses: actions/checkout@v4
+
+      - name: Use Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ secrets.NODE_VERSION || '20' }}
+
+      - name: Build
+        run: |
+          npm ci
+          npm run build || echo "no build step"
+
+      - name: Ship code to EC2 (rsync)
+        uses: burnett01/rsync-deployments@v7
+        with:
+          switches: -avr --delete --exclude=".git" --exclude=".github" --exclude="node_modules"
+          path: ./
+          remote_path: ${{ secrets.STAGE_DIR }}
+          remote_host: ${{ secrets.SSH_HOST }}
+          remote_user: ${{ secrets.SSH_USER }}
+          remote_key: ${{ secrets.SSH_KEY }}
+
+      - name: Install deps & restart PM2 on EC2
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            cd ${{ secrets.STAGE_DIR }}
+            npm ci --omit=dev
+            # run DB migrations/seed if you have scripts
+            # npm run seed:stage || true
+            pm2 describe ntc-api-stage >/dev/null 2>&1 && pm2 reload ntc-api-stage || pm2 start "node src/server.js" --name ntc-api-stage --update-env --env production
+            pm2 save
