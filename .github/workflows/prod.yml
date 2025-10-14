@@ -26,6 +26,17 @@ jobs:
           fi
           npm run build || echo "no build step"
 
+      # 👉 Create a tarball excluding junk
+      - name: Pack deploy artifact
+        run: |
+          tar \
+            --exclude='./.git' \
+            --exclude='./node_modules' \
+            --exclude='./.github' \
+            --exclude='./.vscode' \
+            --exclude='*.log' \
+            -czf app.tgz .
+
       # Ensure Prod dir exists
       - name: Prepare target dir on EC2
         uses: appleboy/ssh-action@v1.2.0
@@ -36,8 +47,9 @@ jobs:
           script: |
             sudo mkdir -p ${{ secrets.PROD_DIR }}
             sudo chown -R $USER:$USER ${{ secrets.PROD_DIR }}
+            mkdir -p /tmp/ntc-api
 
-      # Upload to EC2 (exclude .git, node_modules, etc.)
+      # Upload the single tarball to /tmp on the server
       - name: Upload build via SCP
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -45,17 +57,11 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           port: 22
-          source: |
-            .
-            !.git/**
-            !node_modules/**
-            !.github/**
-            !.vscode/**
-            !**/*.log
-          target: ${{ secrets.PROD_DIR }}
+          source: "app.tgz"
+          target: "/tmp/ntc-api"
           overwrite: true
 
-      # Install deps + restart PM2
+      # Extract, install, restart PM2
       - name: Install deps & restart PM2 on EC2
         uses: appleboy/ssh-action@v1.2.0
         with:
@@ -63,6 +69,10 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           script: |
+            set -e
+            cd /tmp/ntc-api
+            tar -xzf app.tgz -C ${{ secrets.PROD_DIR }}
+            rm -f app.tgz
             cd ${{ secrets.PROD_DIR }}
             if [ -f package-lock.json ]; then
               npm ci --omit=dev
