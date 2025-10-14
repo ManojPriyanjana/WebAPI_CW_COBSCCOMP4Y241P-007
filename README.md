@@ -1,5 +1,8 @@
 # WebAPI_CW_COBSCCOMP241P-007
 
+STUDENT ID :  COBSCCOMP241P-007
+STUDENT NAME : K.G.M.P.Daysri
+
 # Express API Scaffold (ESM)
 
 > **Server entry point:** `src/server.js` (the legacy root-level `server.js` has been removed).
