@@ -26,7 +26,7 @@ jobs:
           fi
           npm run build || echo "no build step"
 
-      # Ensure target dir exists on EC2
+      # Ensure Stage dir exists
       - name: Prepare target dir on EC2
         uses: appleboy/ssh-action@v1.2.0
         with:
@@ -37,7 +37,7 @@ jobs:
             sudo mkdir -p ${{ secrets.STAGE_DIR }}
             sudo chown -R $USER:$USER ${{ secrets.STAGE_DIR }}
 
-      # Upload source to EC2
+      # Upload to EC2 (exclude .git, node_modules, etc.)
       - name: Upload build via SCP
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -45,11 +45,17 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           port: 22
-          source: "."
+          source: |
+            .
+            !.git/**
+            !node_modules/**
+            !.github/**
+            !.vscode/**
+            !**/*.log
           target: ${{ secrets.STAGE_DIR }}
           overwrite: true
 
-      # Install deps and restart PM2 on EC2
+      # Install deps + restart PM2
       - name: Install deps & restart PM2 on EC2
         uses: appleboy/ssh-action@v1.2.0
         with:
