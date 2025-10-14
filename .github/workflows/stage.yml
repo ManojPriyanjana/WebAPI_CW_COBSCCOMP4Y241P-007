@@ -26,7 +26,13 @@ jobs:
           fi
           npm run build || echo "no build step"
 
-      # Ensure target dir exists on EC2
+      # Pack only tracked source files into tarball (safe + clean)
+      - name: Pack deploy artifact
+        run: |
+          git archive --format=tar HEAD | gzip > app.tgz
+          ls -lh app.tgz
+
+      # Ensure Stage dir exists
       - name: Prepare target dir on EC2
         uses: appleboy/ssh-action@v1.2.0
         with:
@@ -36,20 +42,20 @@ jobs:
           script: |
             sudo mkdir -p ${{ secrets.STAGE_DIR }}
             sudo chown -R $USER:$USER ${{ secrets.STAGE_DIR }}
+            mkdir -p /tmp/ntc-api
 
-      # Upload source to EC2
+      # Upload tarball to server
       - name: Upload build via SCP
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
-          port: 22
-          source: "."
-          target: ${{ secrets.STAGE_DIR }}
+          source: "app.tgz"
+          target: "/tmp/ntc-api"
           overwrite: true
 
-      # Install deps and restart PM2 on EC2
+      # Extract + install + restart PM2
       - name: Install deps & restart PM2 on EC2
         uses: appleboy/ssh-action@v1.2.0
         with:
@@ -57,6 +63,10 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           script: |
+            set -e
+            cd /tmp/ntc-api
+            tar -xzf app.tgz -C ${{ secrets.STAGE_DIR }}
+            rm -f app.tgz
             cd ${{ secrets.STAGE_DIR }}
             if [ -f package-lock.json ]; then
               npm ci --omit=dev
