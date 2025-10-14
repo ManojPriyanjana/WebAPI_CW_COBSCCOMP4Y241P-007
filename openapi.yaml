@@ -1,0 +1,2108 @@
+openapi: 3.1.0
+info:
+  title: National Transit Connect API
+  version: 0.1.0
+  summary: REST + SSE backend for bus routes, trips, live locations, and alerts.
+  description: |-
+    This document describes the HTTP and Server-Sent Events surfaces exposed by the
+    National Transit Connect API. It covers authentication, pagination, conditional
+    caching, rate limiting, and resource models for routes, buses, trips, alerts,
+    and live bus location updates.
+servers:
+      security:
+        - bearerAuth: []
+  - url: http://localhost:3000
+    description: Local development server
+  - url: https://api.example.com
+    description: Placeholder production hostname
+security:
+  - bearerAuth: []
+tags:
+  - name: Health
+    description: Service health probes
+        '401':
+          description: Missing or invalid bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Operator attempted to delete a bus owned by another operator
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  - name: Auth
+    description: Authentication and token lifecycle
+  - name: Routes
+    description: CRUD operations for transport routes
+  - name: Buses
+    description: CRUD operations and telemetry endpoints for buses
+  - name: Trips
+    description: Trip scheduling APIs
+  - name: Alerts
+    description: Passenger-facing service alerts
+  - name: Streaming
+    description: Live updates delivered via Server-Sent Events
+  - name: Stops
+    description: Static lookup data for bus stops and interchange points
+  - name: Users
+    description: Administrative user management
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    PageParam:
+      name: page
+      in: query
+      description: 1-based page number. Defaults to 1 when omitted.
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    LimitParam:
+      name: limit
+      in: query
+      description: Page size. Defaults to 20. Maximum varies per resource (commonly 100).
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 1000
+        default: 20
+    ServiceDateParam:
+      name: serviceDate
+      in: query
+      description: >-
+        Calendar date in YYYY-MM-DD interpreted in the service timezone (Asia/Colombo).
+        When supplied, values are normalized to the corresponding start-of-day instant.
+      schema:
+        type: string
+        format: date
+      example: '2025-10-06'
+    ServiceTimeParam:
+      name: time
+      in: query
+      description: >-
+        Local time in HH:mm (24h) interpreted in the service timezone (Asia/Colombo).
+        Used together with serviceDate to compose precise instants.
+      schema:
+        type: string
+        pattern: '^(?:[01]\d|2[0-3]):[0-5]\d$'
+      example: '07:30'
+    SortParam:
+      name: sort
+      in: query
+      description: "Sort expression supporting dotted fields and '-' prefix for descending order (e.g. `-updatedAt`)."
+      schema:
+        type: string
+      example: "-updatedAt"
+    FilterParam:
+      name: filter
+      in: query
+      description: Deep object filter (e.g. `filter[name]=North`, `filter[status]=active`).
+      style: deepObject
+      explode: true
+      schema:
+        type: object
+        additionalProperties:
+          type: string
+    AlertsActiveParam:
+      name: active
+      in: query
+      description: "Filter alerts by active state. When omitted the API returns only currently active alerts. Set to `false` to retrieve expired or upcoming alerts."
+      schema:
+        type: boolean
+      example: true
+    IfNoneMatchHeader:
+      name: If-None-Match
+      in: header
+      description: Provide the ETag from a previous response to leverage conditional caching (304 Not Modified when unchanged).
+      schema:
+        type: string
+    IfModifiedSinceHeader:
+      name: If-Modified-Since
+      in: header
+      description: Provide the Last-Modified value from a previous response to leverage conditional caching.
+      schema:
+        type: string
+        format: date-time
+  headers:
+    ETag:
+      description: Weak ETag representing the response entity. Reuse with `If-None-Match` on subsequent requests.
+      schema:
+        type: string
+    LastModified:
+      description: Timestamp identifying the last mutation of the resource collection or entity.
+      schema:
+        type: string
+        format: date-time
+    RateLimitLimit:
+      description: Maximum requests permitted in the current window.
+      schema:
+        type: integer
+    RateLimitRemaining:
+      description: Requests remaining in the current window.
+      schema:
+        type: integer
+    RateLimitReset:
+      description: UNIX epoch seconds when the current window resets.
+      schema:
+        type: integer
+        format: int64
+  schemas:
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: integer
+              format: int32
+            message:
+              type: string
+            details:
+              type: object
+              additionalProperties: true
+    Route:
+      type: object
+      properties:
+        id:
+          type: string
+          description: MongoDB ObjectId of the route
+          example: 651f8dd7f82f10065b4a8c90
+        code:
+          type: string
+          example: RX01
+        name:
+          type: string
+        provinceFrom:
+          type: string
+        provinceTo:
+          type: string
+        distanceKm:
+          type: number
+          format: float
+          example: 180
+        operatorId:
+          type: string
+          description: Operator account responsible for the bus
+          description: Owning operator's user id (for RBAC checks)
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - code
+        - name
+        - provinceFrom
+        - provinceTo
+        - distanceKm
+    PaginatedRouteList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Route'
+        page:
+          type: integer
+        limit:
+          type: integer
+        total:
+          type: integer
+      required:
+        - data
+        - page
+        - limit
+        - total
+    Bus:
+      type: object
+      properties:
+        id:
+          type: string
+          example: 6520a963fec7e5569cd4aa42
+        regNo:
+          type: string
+          example: NB-5010
+        operator:
+          type: string
+        capacity:
+          type: integer
+        status:
+          type: string
+          description: Operational status (e.g. active, maintenance)
+        ownerId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - regNo
+        - operator
+        - capacity
+    PaginatedBusList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Bus'
+        page:
+          type: integer
+        limit:
+          type: integer
+        total:
+          type: integer
+      required:
+        - data
+        - page
+        - limit
+        - total
+    Trip:
+      type: object
+      properties:
+        id:
+          type: string
+        routeId:
+          type: string
+        busId:
+          type: string
+        fromStopId:
+          type: string
+        toStopId:
+          type: string
+        serviceDate:
+          type: string
+          format: date
+        schedDepart:
+          type: string
+          format: date-time
+        schedArrive:
+          type: string
+          format: date-time
+        status:
+          type: string
+          description: Trip lifecycle status (scheduled, enroute, completed, cancelled)
+        ownerId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - routeId
+        - busId
+        - fromStopId
+        - toStopId
+        - serviceDate
+        - schedDepart
+        - schedArrive
+    PaginatedTripList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Trip'
+        page:
+          type: integer
+        limit:
+          type: integer
+        total:
+          type: integer
+      required:
+        - data
+        - page
+        - limit
+        - total
+    TripSearchResult:
+      allOf:
+        - $ref: '#/components/schemas/Trip'
+        - type: object
+          properties:
+            fromStop:
+              $ref: '#/components/schemas/Stop'
+            toStop:
+              $ref: '#/components/schemas/Stop'
+    TripSearchResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/TripSearchResult'
+        page:
+          type: integer
+        limit:
+          type: integer
+        total:
+          type: integer
+      required:
+        - data
+        - page
+        - limit
+        - total
+    Alert:
+      type: object
+      properties:
+        id:
+          type: string
+        severity:
+          type: string
+          enum: [info, warning, critical]
+        message:
+          type: string
+        validFrom:
+          type: string
+          format: date-time
+        validTo:
+          type: string
+          format: date-time
+        routeId:
+          type: string
+        tripId:
+          type: string
+        operatorId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - message
+        - severity
+        - validFrom
+        - validTo
+    PaginatedAlertList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Alert'
+        page:
+          type: integer
+        limit:
+          type: integer
+        total:
+          type: integer
+      required:
+        - data
+        - page
+        - limit
+        - total
+    Stop:
+      type: object
+      properties:
+        id:
+          type: string
+          description: MongoDB ObjectId of the stop
+        code:
+          type: string
+          example: ST-001
+        name:
+          type: string
+        location:
+          description: GeoJSON Point describing the stop location (longitude, latitude)
+          type: object
+          properties:
+            type:
+              type: string
+              enum: [Point]
+            coordinates:
+              type: array
+              minItems: 2
+              maxItems: 2
+              items:
+                type: number
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - code
+        - name
+        - location
+    PaginatedStopList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Stop'
+        page:
+          type: integer
+        limit:
+          type: integer
+        total:
+          type: integer
+      required:
+        - data
+        - page
+        - limit
+        - total
+    LocationUpdate:
+      type: object
+      properties:
+        id:
+          type: string
+        busId:
+          type: string
+        lat:
+          type: number
+          format: float
+        lon:
+          type: number
+          format: float
+        ts:
+          type: string
+          format: date-time
+        speedKph:
+          type: number
+          format: float
+        heading:
+          type: number
+          format: float
+        accuracyM:
+          type: number
+          format: float
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        estimates:
+          type: object
+          nullable: true
+          properties:
+            nextStop:
+              $ref: '#/components/schemas/EtaStop'
+            destination:
+              $ref: '#/components/schemas/EtaStop'
+            delayMinutes:
+              type: integer
+              description: Difference between predicted arrival time and scheduled arrival, in minutes. Positive values indicate a delay.
+      required:
+        - id
+        - busId
+        - lat
+        - lon
+        - ts
+    EtaStop:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        etaMinutes:
+          type: integer
+          minimum: 0
+      required:
+        - id
+        - name
+        - etaMinutes
+paths:
+  /healthz:
+    get:
+      tags: [Health]
+      summary: Basic liveness check
+      operationId: getHealth
+      responses:
+        '200':
+          description: Service is healthy
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Last-Modified:
+              $ref: '#/components/headers/LastModified'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+                required:
+                  - status
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a commuter account
+      description: |-
+        Creates a commuter user account. All self-service registrations receive the `commuter` role. Operators
+        and admins must be promoted by an administrator using the role management endpoint.
+      operationId: registerUser
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  minLength: 8
+      responses:
+        '201':
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      _id:
+                        type: string
+                      email:
+                        type: string
+                        format: email
+                      role:
+                        type: string
+                        enum: [commuter]
+                    required: [_id, email, role]
+        '409':
+          description: Email already registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Authenticate with email/password and receive JWTs
+      description: >-
+        Returns a short-lived JWT access token and an opaque refresh token. Refresh
+        tokens are stored hashed in the database and linked to the authenticated
+        user so they can be revoked or audited server-side.
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Tokens issued
+          headers:
+            RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessToken:
+                    type: string
+                  refreshToken:
+                    type: string
+                required:
+                  - accessToken
+                  - refreshToken
+        '400':
+          description: Invalid credentials supplied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '423':
+          description: Account locked or rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh an expired/expiring access token
+      description: >-
+        Looks up the provided refresh token by its hashed value, verifies it is
+        still active and unexpired, then issues a new access token. No refresh
+        token payload is trusted client-side.
+      operationId: refreshToken
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        '200':
+          description: Refreshed access token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessToken:
+                    type: string
+                required:
+                  - accessToken
+        '400':
+          description: Invalid refresh token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke a refresh token
+      description: >-
+        Marks the matching hashed refresh token as revoked so it can no longer be
+        used to mint access tokens. Clients should discard their cached refresh
+        token after this call.
+      operationId: logout
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        '200':
+          description: Refresh token revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+        '400':
+          description: Refresh token missing or invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/routes:
+    get:
+      tags: [Routes]
+      summary: List routes with pagination and filtering
+      operationId: listRoutes
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - $ref: '#/components/parameters/AlertsActiveParam'
+        - $ref: '#/components/parameters/SortParam'
+        - $ref: '#/components/parameters/FilterParam'
+        - $ref: '#/components/parameters/IfNoneMatchHeader'
+        - $ref: '#/components/parameters/IfModifiedSinceHeader'
+      security: []
+      responses:
+        '200':
+          description: Routes returned successfully
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Last-Modified:
+              $ref: '#/components/headers/LastModified'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedRouteList'
+        '304':
+          description: Not modified since last request
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      tags: [Routes]
+      summary: Create a new route
+      operationId: createRoute
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, name, provinceFrom, provinceTo, distanceKm]
+              properties:
+                code:
+                  type: string
+                name:
+                  type: string
+                provinceFrom:
+                  type: string
+                provinceTo:
+                  type: string
+                distanceKm:
+                  type: number
+                  format: float
+                ownerId:
+                  type: string
+      responses:
+        '201':
+          description: Route created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Route'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Duplicate route code
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/stops:
+    get:
+      tags: [Stops]
+      summary: List stops with pagination and filtering
+      operationId: listStops
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - $ref: '#/components/parameters/SortParam'
+        - $ref: '#/components/parameters/FilterParam'
+        - $ref: '#/components/parameters/IfNoneMatchHeader'
+        - $ref: '#/components/parameters/IfModifiedSinceHeader'
+      security: []
+      responses:
+        '200':
+          description: Stops returned successfully
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Last-Modified:
+              $ref: '#/components/headers/LastModified'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedStopList'
+        '304':
+          description: Not modified since last request
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/trips/search:
+    get:
+      tags: [Trips]
+      summary: Search scheduled trips between two stops within a departure window
+      operationId: searchTrips
+      parameters:
+        - name: fromStopId
+          in: query
+          required: true
+          description: Origin stop identifier
+          schema:
+            type: string
+        - name: toStopId
+          in: query
+          required: true
+          description: Destination stop identifier
+          schema:
+            type: string
+        - name: date
+          in: query
+          required: true
+          description: Service date in YYYY-MM-DD (Asia/Colombo timezone)
+          schema:
+            type: string
+            format: date
+          example: '2025-10-14'
+        - name: startTime
+          in: query
+          required: true
+          description: Earliest acceptable scheduled departure (HH:mm, 24h clock)
+          schema:
+            type: string
+            pattern: '^(?:[01]\d|2[0-3]):[0-5]\d$'
+          example: '08:00'
+        - name: endTime
+          in: query
+          required: true
+          description: Latest acceptable scheduled departure (HH:mm, 24h clock)
+          schema:
+            type: string
+            pattern: '^(?:[01]\d|2[0-3]):[0-5]\d$'
+          example: '10:00'
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: sort
+          in: query
+          description: Sort order (schedDepart or -schedDepart). Alias schedDeparture is also accepted.
+          schema:
+            type: string
+            enum: [schedDepart, -schedDepart, schedDeparture, -schedDeparture]
+          example: schedDeparture
+      responses:
+        '200':
+          description: Trips returned successfully
+          headers:
+            RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
+            Cache-Control:
+              description: Indicates cacheability of the response
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TripSearchResponse'
+              examples:
+                default:
+                  summary: Morning departures
+                  value:
+                    page: 1
+                    limit: 20
+                    total: 1
+                    data:
+                      - id: 652ff1c1bf0e4fb67d9e7a01
+                        routeId: 652ff1c1bf0e4fb67d9e7a00
+                        busId: 652ff1c1bf0e4fb67d9e7aff
+                        fromStopId: 652feebb4c3b8508c52ee201
+                        toStopId: 652feebb4c3b8508c52ee202
+                        serviceDate: '2025-10-14'
+                        schedDepart: '2025-10-14T03:15:00.000Z'
+                        schedArrive: '2025-10-14T05:00:00.000Z'
+                        status: SCHEDULED
+                        fromStop:
+                          id: 652feebb4c3b8508c52ee201
+                          code: STO-001
+                          name: Origin Terminal
+                          location:
+                            type: Point
+                            coordinates: [79.861, 6.927]
+                        toStop:
+                          id: 652feebb4c3b8508c52ee202
+                          code: STD-010
+                          name: Destination Terminal
+                          location:
+                            type: Point
+                            coordinates: [80.027, 7.001]
+        '422':
+          description: Invalid date/time window or identifiers
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/routes/by-code/{code}:
+    get:
+      tags: [Routes]
+      summary: Retrieve a route by its short code
+  /api/v1/users/{id}/role:
+    patch:
+      tags: [Users]
+      summary: Update a user's role
+      operationId: updateUserRole
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role:
+                  type: string
+                  enum: [admin, operator, commuter]
+      responses:
+        '200':
+          description: Role updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      _id:
+                        type: string
+                      email:
+                        type: string
+                        format: email
+                      role:
+                        type: string
+                        enum: [admin, operator, commuter]
+                      operatorId:
+                        type: string
+                        nullable: true
+                      createdAt:
+                        type: string
+                        format: date-time
+                      updatedAt:
+                        type: string
+                        format: date-time
+                    required: [_id, email, role]
+                required: [data]
+        '401':
+          description: Missing or invalid bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden for non-admin users
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Invalid role payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      operationId: getRouteByCode
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/IfNoneMatchHeader'
+        - $ref: '#/components/parameters/IfModifiedSinceHeader'
+      security: []
+      responses:
+        '200':
+          description: Route found
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Last-Modified:
+              $ref: '#/components/headers/LastModified'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Route'
+        '404':
+          description: Route not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/routes/{id}:
+    get:
+      tags: [Routes]
+      summary: Retrieve a route by id
+      operationId: getRoute
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/IfNoneMatchHeader'
+        - $ref: '#/components/parameters/IfModifiedSinceHeader'
+      security: []
+      responses:
+        '200':
+          description: Route found
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Last-Modified:
+              $ref: '#/components/headers/LastModified'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Route'
+        '404':
+          description: Route not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    patch:
+      tags: [Routes]
+      summary: Update editable fields on a route
+      operationId: updateRoute
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                provinceFrom:
+                  type: string
+                provinceTo:
+                  type: string
+                distanceKm:
+                  type: number
+                  format: float
+      responses:
+        '200':
+          description: Route updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Route'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Route not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      tags: [Routes]
+      summary: Delete a route
+      operationId: deleteRoute
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Route removed
+        '404':
+          description: Route not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/buses:
+    get:
+      tags: [Buses]
+      summary: List buses with pagination and filtering
+      operationId: listBuses
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - $ref: '#/components/parameters/SortParam'
+        - $ref: '#/components/parameters/FilterParam'
+        - $ref: '#/components/parameters/IfNoneMatchHeader'
+        - $ref: '#/components/parameters/IfModifiedSinceHeader'
+      security: []
+      responses:
+        '200':
+          description: Buses returned successfully
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Last-Modified:
+              $ref: '#/components/headers/LastModified'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedBusList'
+        '304':
+          description: Not modified since last request
+    post:
+      tags: [Buses]
+      summary: Register a new bus
+      description: >-
+        Successful creations are recorded in the admin audit log alongside the
+        acting user and assigned operator to support compliance review.
+      operationId: createBus
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [regNo, operator, capacity]
+              properties:
+                regNo:
+                  type: string
+                operator:
+                  type: string
+                capacity:
+                  type: integer
+                operatorId:
+                  type: string
+                  description: Optional when assigned by an administrator
+      responses:
+        '201':
+          description: Bus created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Bus'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Duplicate registration number
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Operator attempted to create a bus for another operator
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/buses/{id}:
+    get:
+      tags: [Buses]
+      summary: Retrieve a bus by id
+      operationId: getBus
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/IfNoneMatchHeader'
+        - $ref: '#/components/parameters/IfModifiedSinceHeader'
+      security: []
+      responses:
+        '200':
+          description: Bus found
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Last-Modified:
+              $ref: '#/components/headers/LastModified'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Bus'
+        '404':
+          description: Bus not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    patch:
+      tags: [Buses]
+      summary: Update a bus
+      description: >-
+        Mutations are written to the admin audit log with the acting user, target
+        bus, and the fields that changed.
+      operationId: updateBus
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                operator:
+                  type: string
+                capacity:
+                  type: integer
+                status:
+                  type: string
+                operatorId:
+                  type: string
+                  description: Admin-only ownership reassignment
+      responses:
+        '200':
+          description: Bus updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Bus'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Bus not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Operator attempted to mutate a bus owned by another operator
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      tags: [Buses]
+      summary: Delete a bus
+      description: >-
+        Successful deletions are captured in the admin audit log with actor and
+        target identifiers.
+      operationId: deleteBus
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Bus deleted
+        '404':
+          description: Bus not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Operator attempted to delete a bus owned by another operator
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/buses/{id}/locations:
+    post:
+      tags: [Buses]
+      summary: Submit a live location sample
+      operationId: createBusLocation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lat, lon]
+              properties:
+                lat:
+                  type: number
+                  format: float
+                lon:
+                  type: number
+                  format: float
+                ts:
+                  type: string
+                  format: date-time
+                speedKph:
+                  type: number
+                  format: float
+                heading:
+                  type: number
+                  format: float
+                accuracyM:
+                  type: number
+                  format: float
+      responses:
+        '202':
+          description: Location accepted
+          headers:
+            RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Bus not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Operator attempted to submit telemetry for a bus owned by another operator
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/buses/{id}/locations/latest:
+    get:
+      tags: [Buses]
+      summary: Retrieve the most recent location sample for a bus
+      operationId: getLatestBusLocation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/IfNoneMatchHeader'
+        - $ref: '#/components/parameters/IfModifiedSinceHeader'
+      security: []
+      responses:
+        '200':
+          description: Latest location (or null when absent). When trip schedule data is available, the payload includes ETA estimates for the next stop and destination.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Last-Modified:
+              $ref: '#/components/headers/LastModified'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    oneOf:
+                      - $ref: '#/components/schemas/LocationUpdate'
+                      - type: 'null'
+        '404':
+          description: Bus not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/buses/{id}/locations/history:
+    get:
+      tags: [Buses]
+      summary: Retrieve historic location samples
+      operationId: getBusLocationHistory
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: since
+          in: query
+          description: >-
+            Only include samples captured at or after this timestamp. Accepts ISO 8601
+            instants or service-local date/time strings (YYYY-MM-DD or HH:mm) interpreted in
+            Asia/Colombo timezone.
+          schema:
+            type: string
+            format: date-time
+        - name: until
+          in: query
+          description: >-
+            Only include samples captured before this timestamp. Accepts ISO 8601 instants
+            or service-local date/time strings (YYYY-MM-DD or HH:mm) interpreted in
+            Asia/Colombo timezone.
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          description: Maximum number of samples to return (default 500, max 1000)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 500
+        - name: bbox
+          in: query
+          description: Bounding box filter in `lon1,lat1,lon2,lat2` order
+          schema:
+            type: string
+        - $ref: '#/components/parameters/IfNoneMatchHeader'
+        - $ref: '#/components/parameters/IfModifiedSinceHeader'
+      security: []
+      responses:
+        '200':
+          description: Location history returned
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Last-Modified:
+              $ref: '#/components/headers/LastModified'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/LocationUpdate'
+                  meta:
+                    type: object
+                    properties:
+                      limit:
+                        type: integer
+                      since:
+                        type: string
+                        format: date-time
+                      until:
+                        type: string
+                        format: date-time
+                      bbox:
+                        type: string
+        '404':
+          description: Bus not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/trips:
+    get:
+      tags: [Trips]
+      summary: List trips with pagination and filtering
+      operationId: listTrips
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - $ref: '#/components/parameters/SortParam'
+        - $ref: '#/components/parameters/FilterParam'
+        - name: filter[serviceDate]
+          in: query
+          description: >-
+            Service date (YYYY-MM-DD) interpreted as Asia/Colombo time. Normalized to
+            the start of day instant before filtering.
+          schema:
+            type: string
+        - $ref: '#/components/parameters/IfNoneMatchHeader'
+        - $ref: '#/components/parameters/IfModifiedSinceHeader'
+      security: []
+      responses:
+        '200':
+          description: Trips returned successfully
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Last-Modified:
+              $ref: '#/components/headers/LastModified'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedTripList'
+        '304':
+          description: Not modified since last request
+    post:
+      tags: [Trips]
+      summary: Create a new trip assignment
+      description: >-
+        Successful trip assignments are recorded in the admin audit log including
+        the actor, route, and bus identifiers.
+      operationId: createTrip
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [routeId, busId, serviceDate, schedDepart, schedArrive]
+              properties:
+                routeId:
+                  type: string
+                busId:
+                  type: string
+                serviceDate:
+                  type: string
+                  format: date
+                schedDepart:
+                  type: string
+                  format: date-time
+                schedArrive:
+                  type: string
+                  format: date-time
+                ownerId:
+                  type: string
+      responses:
+        '201':
+          description: Trip created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Trip'
+        '400':
+          description: Validation error or scheduling conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Route or bus not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/trips/{id}:
+    get:
+      tags: [Trips]
+      summary: Retrieve a trip by id
+      operationId: getTrip
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/IfNoneMatchHeader'
+        - $ref: '#/components/parameters/IfModifiedSinceHeader'
+      security: []
+      responses:
+        '200':
+          description: Trip found
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Last-Modified:
+              $ref: '#/components/headers/LastModified'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Trip'
+        '404':
+          description: Trip not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    patch:
+      tags: [Trips]
+      summary: Update a trip schedule or metadata
+      description: >-
+        Field changes are noted in the admin audit log along with the acting user
+        and target trip.
+      operationId: updateTrip
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                serviceDate:
+                  type: string
+                  format: date
+                schedDepart:
+                  type: string
+                  format: date-time
+                schedArrive:
+                  type: string
+                  format: date-time
+                status:
+                  type: string
+                ownerId:
+                  type: string
+      responses:
+        '200':
+          description: Trip updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Trip'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Trip not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      tags: [Trips]
+      summary: Delete a trip
+      description: >-
+        Trip deletions are captured in the admin audit log with actor and target
+        identifiers.
+      operationId: deleteTrip
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Trip removed
+        '404':
+          description: Trip not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/alerts:
+    get:
+      tags: [Alerts]
+      summary: List service alerts
+      operationId: listAlerts
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - $ref: '#/components/parameters/SortParam'
+        - $ref: '#/components/parameters/FilterParam'
+        - $ref: '#/components/parameters/IfNoneMatchHeader'
+        - $ref: '#/components/parameters/IfModifiedSinceHeader'
+      security: []
+      responses:
+        '200':
+          description: Alerts returned successfully
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Last-Modified:
+              $ref: '#/components/headers/LastModified'
+            RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAlertList'
+        '304':
+          description: Not modified since last request
+    post:
+      tags: [Alerts]
+      summary: Publish a new alert
+      description: >-
+        New alerts are recorded in the admin audit log with the actor and any
+        assigned operator, route, or trip references.
+      operationId: createAlert
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [severity, message, validFrom, validTo]
+              properties:
+                severity:
+                  type: string
+                  enum: [info, warning, critical]
+                message:
+                  type: string
+                validFrom:
+                  type: string
+                  format: date-time
+                validTo:
+                  type: string
+                  format: date-time
+                routeId:
+                  type: string
+                tripId:
+                  type: string
+                operatorId:
+                  type: string
+                  description: Admin-only ownership assignment
+      responses:
+        '201':
+          description: Alert created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Alert'
+                required: [data]
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Operator attempted to create an alert for another operator
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      tags: [Alerts]
+      summary: Publish a new alert
+      operationId: createAlert
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, body, severity]
+              properties:
+                title:
+                  type: string
+                body:
+                  type: string
+                severity:
+                  type: string
+                  enum: [info, warning, critical]
+                type:
+                  type: string
+                routes:
+                  type: array
+                  items:
+                    type: string
+                startAt:
+                  type: string
+                  format: date-time
+                endAt:
+                  type: string
+                  format: date-time
+      responses:
+        '201':
+          description: Alert created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Alert'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/alerts/{id}:
+    get:
+      tags: [Alerts]
+      summary: Retrieve an alert by id
+      operationId: getAlert
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/IfNoneMatchHeader'
+        - $ref: '#/components/parameters/IfModifiedSinceHeader'
+      security: []
+      responses:
+        '200':
+          description: Alert found
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Last-Modified:
+              $ref: '#/components/headers/LastModified'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Alert'
+        '404':
+          description: Alert not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    patch:
+      tags: [Alerts]
+      summary: Update an alert
+      description: >-
+        Alert updates are tracked in the admin audit log together with the actor
+        and the fields that changed.
+      operationId: updateAlert
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                severity:
+                  type: string
+                  enum: [info, warning, critical]
+                message:
+                  type: string
+                validFrom:
+                  type: string
+                  format: date-time
+                validTo:
+                  type: string
+                  format: date-time
+                routeId:
+                  type: string
+                tripId:
+                  type: string
+                operatorId:
+                  type: string
+              additionalProperties: false
+      responses:
+        '200':
+          description: Alert updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Alert'
+                required: [data]
+        '404':
+          description: Alert not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      tags: [Alerts]
+      summary: Delete an alert
+      description: >-
+        Deletes the alert and records an audit entry.
+      operationId: deleteAlert
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Alert deleted
+        '404':
+          description: Alert not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /stream/positions:
+    get:
+      tags: [Streaming]
+      summary: Subscribe to live bus positions via Server-Sent Events
+                  '401':
+                    description: Missing or invalid bearer token
+                    content:
+                      application/json:
+                        schema:
+                          $ref: '#/components/schemas/Error'
+                  '403':
+                    description: Operator attempted to update an alert owned by another operator
+                    content:
+                      application/json:
+                        schema:
+                          $ref: '#/components/schemas/Error'
+      operationId: streamPositions
+      description: |-
+        Opens a long-lived HTTP connection that emits `text/event-stream` messages whenever new bus
+        location documents are inserted. Heartbeat comments are sent every 15 seconds.
+      parameters:
+        - name: Last-Event-ID
+          in: header
+          required: false
+          description: Continue from a specific event id (client managed)
+          schema:
+                security:
+                  - bearerAuth: []
+            type: string
+      security: []
+      responses:
+        '200':
+          description: Stream opened successfully
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                  '401':
+                    description: Missing or invalid bearer token
+                    content:
+                      application/json:
+                        schema:
+                          $ref: '#/components/schemas/Error'
+                  '403':
+                    description: Operator attempted to delete an alert owned by another operator
+                    content:
+                      application/json:
+                        schema:
+                          $ref: '#/components/schemas/Error'
+                description: Server-Sent Events payload (data lines containing `LocationUpdate` JSON)
+        '503':
+          description: Stream unavailable (e.g. MongoDB disconnected)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /stream/trips/{tripId}/status:
+    get:
+      tags: [Streaming]
+      summary: Stream trip status changes and related alerts via Server-Sent Events
+      description: >-
+        Opens a Server-Sent Events connection that publishes `status` events whenever the trip status
+        changes or trip-scoped alerts are created or updated. The stream declares a 15 second retry
+        interval and emits heartbeat comments every 15 seconds.
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema:
+            type: string
+      security: []
+      responses:
+        '200':
+          description: Stream opened successfully
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: Server-Sent Events payload containing trip status or alert JSON objects.
+        '404':
+          description: Trip not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Stream unavailable (e.g. MongoDB disconnected)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'

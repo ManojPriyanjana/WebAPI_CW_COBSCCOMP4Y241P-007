@@ -1,0 +1,67 @@
+name: Deploy Stage
+
+on:
+  push:
+    branches: [ "Stage" ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout (shallow)
+        uses: actions/checkout@v4
+
+      - name: Use Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ secrets.NODE_VERSION || '20' }}
+
+      - name: Build
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install --no-audit --no-fund
+          fi
+          npm run build || echo "no build step"
+
+      # Ensure target dir exists on EC2
+      - name: Prepare target dir on EC2
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            sudo mkdir -p ${{ secrets.STAGE_DIR }}
+            sudo chown -R $USER:$USER ${{ secrets.STAGE_DIR }}
+
+      # Upload source to EC2
+      - name: Upload build via SCP
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: 22
+          source: "."
+          target: ${{ secrets.STAGE_DIR }}
+          overwrite: true
+
+      # Install deps and restart PM2 on EC2
+      - name: Install deps & restart PM2 on EC2
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            cd ${{ secrets.STAGE_DIR }}
+            if [ -f package-lock.json ]; then
+              npm ci --omit=dev
+            else
+              npm install --omit=dev --no-audit --no-fund
+            fi
+            pm2 describe ntc-api-stage >/dev/null 2>&1 && pm2 reload ntc-api-stage || pm2 start "node src/server.js" --name ntc-api-stage --update-env --env production
+            pm2 save
