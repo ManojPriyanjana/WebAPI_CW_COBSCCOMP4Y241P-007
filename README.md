@@ -16,7 +16,7 @@
 
 ## Quickstart
 
-```powershell
+```bash
 npm install
 npm run dev
 ```
@@ -33,7 +33,6 @@ Visit http://localhost:3000/healthz to see `{ "status": "ok" }`.
 Serve an interactive Redoc view during development (watches for changes):
 
 ```bash
-npm install
 npm run docs:serve
 ```
 
@@ -66,13 +65,19 @@ JWT_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----\n"
 
 3. Seed demo routes (first time only):
 
-```powershell
+```bash
 node scripts/seedRoutes.js
+```
+
+Or use the npm script alias:
+
+```bash
+npm run seed
 ```
 
 4. Start the server (connects to MongoDB before listening):
 
-```powershell
+```bash
 npm start
 ```
 
@@ -80,7 +85,7 @@ npm start
 
 - Generate a rolling week of trip schedules:
 
-  ```powershell
+  ```bash
   node scripts/generateSimulationData.js --startDate 2025-10-06 --days 7 --csv
   ```
 
@@ -91,7 +96,7 @@ npm start
 
 - Seed Mongo with the generated trips (routes/buses are upserted automatically):
 
-  ```powershell
+  ```bash
   node scripts/seedWeekTrips.js
   ```
 
@@ -101,7 +106,7 @@ npm start
 
 - Required env vars: `JWT_PRIVATE_KEY` and `JWT_PUBLIC_KEY` (PEM strings). For development you can generate a key pair with OpenSSL:
 
-```powershell
+```bash
 # Private key
 openssl genrsa -out private.pem 2048
 # Public key
@@ -112,9 +117,9 @@ Put the PEM contents into your `.env` as quoted multi-line strings (see above). 
 
 ### Auth endpoints
 
-- POST `/auth/register` { email, password, role? }
-  - If no users exist, the first registered becomes `admin`.
-  - Only an `admin` should create other roles in production.
+- POST `/auth/register` { email, password }
+  - Returns a commuter-role account; role selection from this endpoint is intentionally disabled.
+  - Promote early test users manually (e.g., update the `role` field in MongoDB or seed an admin account) before exercising admin-only flows.
 - POST `/auth/login` { email, password } -> `{ accessToken, refreshToken }`
 - POST `/auth/refresh` { refreshToken } -> `{ accessToken }`
 - POST `/auth/logout` { refreshToken } -> `{ success: true }`
@@ -123,21 +128,22 @@ Access tokens expire in 15 minutes; refresh tokens in 7 days. Use the `Authoriza
 
 ### RBAC protections
 
+- Use `PATCH /api/v1/users/{id}/role` with an admin token to promote/demote users once you have seeded at least one admin account.
 - Write routes for Buses and Trips require role `admin` or `operator`:
   - POST `/api/v1/buses`
   - POST `/api/v1/trips`
 
-  ## Testing
+## Testing
 
   Set `MONGO_URI_TEST` in your `.env` to a separate database (it will be dropped during tests). Then run:
 
-  ```powershell
+  ```bash
   npm test
   ```
 
   This runs Jest in-band with Supertest and generates coverage in the `coverage/` folder. Watch mode:
 
-  ```powershell
+  ```bash
   npm run test:watch
   ```
 
@@ -240,7 +246,7 @@ All GET responses participate in conditional caching. Provide `If-None-Match` or
 
 If you want to run the API without connecting to MongoDB (health/UI dev), use:
 
-```powershell
+```bash
 npm run start:nodb
 # or
 npm run dev:nodb
